@@ -1,0 +1,46 @@
+{
+  "name": "root:/",
+  "path": "/Users/noctarius/Google Drive/Businessplan/",
+  "type": "FOLDER",
+  "compressionMethod": "GZIP",
+  "encryptionMethod": "TWOFISH256",
+  "encryptionKey": "206bca26b1158ab1dfc7416e8016ad15",
+  "transitive": true,
+  "entries": [
+    {
+      "name": "test.dat",
+      "path": "test/test.dat",
+      "type": "FILE",
+      "encryptionMethod": "TWOFISH256",
+      "encryptionKey": "206bca26b1158ab1dfc7416e8016ad15",
+      "compressionMethod": "BZIP2",
+      "signatureMethod": "UNSIGNED",
+      "metadata": [
+        {
+          "test": "config"
+        },
+        {
+          "test2": 1234
+        },
+        {
+          "test3": 12.34
+        }
+      ]
+    },
+    {
+      "name": "test-folder",
+      "type": "FOLDER",
+      "entries": [
+        {
+          "name": "test.dat",
+          "path": "test/test.dat",
+          "type": "FILE",
+          "encryptionMethod": "TWOFISH256",
+          "encryptionKey": "206bca26b1158ab1dfc7416e8016ad15",
+          "compressionMethod": "BZIP2",
+          "signatureMethod": "UNSIGNED"
+        }
+      ]
+    }
+  ]
+}

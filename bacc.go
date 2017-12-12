@@ -1,10 +1,31 @@
 package bacc
 
+import "io"
+
+const MagicHeader uint16 = 0xBACC
+
+const (
+	BaseBytesizeArchiveHeader = uint32(2 + 1 + 1 + 32 + 4 + 8 + 1 + 32 + 3)
+	BaseBytesizeFolderHeader  = uint32(8 + 1 + 4 + 4 + 3)
+	BaseBytesizeFile32Header  = uint32(8 + 1 + 4 + 4 + 4 + 4 + 1 + 1 + 1 + 3)
+	BaseBytesizeFile64Header  = uint32(8 + 1 + 4 + 8 + 8 + 8 + 1 + 1 + 1 + 3)
+)
+
 type AsyncCallback func(result bool, err error)
 
 type ProgressCallback func(uncompressedSize uint64, extracted uint64, progress float32)
 
 type AddressingMode uint8
+
+func (am AddressingMode) String() string {
+	switch am {
+	case ADDRESSING_32BIT:
+		return "32bit addressing"
+
+	default:
+		return "64bit addressing"
+	}
+}
 
 const (
 	ADDRESSING_32BIT AddressingMode = 0x0
@@ -13,13 +34,35 @@ const (
 
 type SignatureMethod uint8
 
+func (sm SignatureMethod) String() string {
+	switch sm {
+	case SIGMET_RSA_PRIVATE:
+		return "rsa-private"
+
+	default:
+		return "unsigned"
+	}
+}
+
 const (
 	SIGMET_UNSINGED    SignatureMethod = 0x00
 	SIGMET_RSA_PRIVATE SignatureMethod = 0x01
-	SIGMET_RSA_PUBLIC  SignatureMethod = 0x02
 )
 
 type CompressionMethod uint8
+
+func (cm CompressionMethod) String() string {
+	switch cm {
+	case COMPMET_GZIP:
+		return "gzip-compressed"
+
+	case COMPMET_BZIP2:
+		return "bzip2-compressed"
+
+	default:
+		return "uncompressed"
+	}
+}
 
 const (
 	COMPMET_UNCOMPRESSED CompressionMethod = 0x00
@@ -28,6 +71,25 @@ const (
 )
 
 type EncryptionMethod uint8
+
+func (em EncryptionMethod) String() string {
+	switch em {
+	case ENCMET_AES256:
+		return "AES256-encrypted"
+
+	case ENCMET_TWOFISH256:
+		return "TWOFISH256-encrypted"
+
+	case ENCMET_RSA_PRIVATE:
+		return "rsa-private-encrypted"
+
+	case ENCMET_RSA_PUBLIC:
+		return "rsa-public-encrypted"
+
+	default:
+		return "unencrypted"
+	}
+}
 
 const (
 	ENCMET_UNENCRYPTED EncryptionMethod = 0x00
@@ -39,58 +101,74 @@ const (
 
 type EntryType uint8
 
+func (et EntryType) String() string {
+	switch et {
+	case ENTRY_TYPE_FOLDER:
+		return "folder-type"
+
+	default:
+		return "file-type"
+	}
+}
+
 const (
 	ENTRY_TYPE_FOLDER EntryType = 0x00
 	ENTRY_TYPE_FILE   EntryType = 0x01
 )
 
 type ArchiveHeader struct {
-	MagicHeader     uint16
-	Version         uint8
-	Bitflag         uint8
-	Checksum        [32]byte
-	HeaderSize      uint32
-	SignatureOffset uint64
-	SignatureMethod SignatureMethod
-	Metadata        []byte
+	MagicHeader            uint16
+	Version                uint8
+	Bitflag                uint8
+	Checksum               [32]byte
+	HeaderSize             uint32
+	SignatureOffset        uint64
+	SignatureMethod        SignatureMethod
+	CertificateFingerprint string
+	Metadata               map[string]interface{}
+}
+
+func (header *ArchiveHeader) AddressingMode() AddressingMode {
+	return AddressingMode((header.Bitflag >> 7) & 1)
 }
 
 type ArchiveEntry interface {
 	Name() string
 	Timestamp() uint64
 	HeaderSize() uint32
-	Metadata() []byte
+	Metadata() map[string]interface{}
 	EntryType() EntryType
 }
 
 type ArchiveFolder interface {
 	Name() string
 	Timestamp() uint64
+	HeaderSize() uint32
+	Metadata() map[string]interface{}
+	EntryType() EntryType
 	EntryCount() uint32
-	Metadata() []byte
 	Entries() []ArchiveEntry
 }
 
 type ArchiveFile interface {
 	Name() string
 	Timestamp() uint64
+	HeaderSize() uint32
+	Metadata() map[string]interface{}
+	EntryType() EntryType
 	CompressedSize() uint64
 	UncompressedSize() uint64
 	ContentOffset() uint64
 	CompressionMethod() CompressionMethod
 	EncryptionMethod() EncryptionMethod
 	SignatureMethod() SignatureMethod
-	Metadata() []byte
 	Verify(callback AsyncCallback)
 	Extract(progress ProgressCallback, callback AsyncCallback)
+	NewReader() io.Reader
 }
 
-type Archive struct {
-	Header    *ArchiveHeader
-	RootEntry ArchiveFolder
-	reader    *reader
-}
-
-type ArchiveReader interface {
-	ReadArchive(file string) (*Archive, error)
+type Archive interface {
+	Header() *ArchiveHeader
+	RootEntry() ArchiveFolder
+	Verify() (bool, error)
 }
