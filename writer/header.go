@@ -21,7 +21,9 @@ type archiveHeaderWriter struct {
 	metadata               []byte
 }
 
-func createHeader(addressingMode bacc.AddressingMode, metadata map[string]interface{}) (*archiveHeaderWriter, error) {
+func createHeader(archive *Archive, addressingMode bacc.AddressingMode,
+	metadata map[string]interface{}) (*archiveHeaderWriter, error) {
+
 	metadataData, err := serialize(metadata)
 	if err != nil {
 		return nil, err
@@ -33,13 +35,14 @@ func createHeader(addressingMode bacc.AddressingMode, metadata map[string]interf
 	}
 
 	return &archiveHeaderWriter{
-		magicHeader:     bacc.MagicHeader,
-		version:         0x01,
-		bitflag:         bitflag,
-		signatureMethod: bacc.SIGMET_UNSINGED,
-		metadataSize:    uint32(len(metadataData)),
-		metadata:        metadataData,
-		headerSize:      bacc.BaseBytesizeArchiveHeader + uint32(len(metadataData)),
+		magicHeader:            bacc.MagicHeader,
+		version:                0x01,
+		bitflag:                bitflag,
+		signatureMethod:        archive.signatureConfig.signatureMethod,
+		certificateFingerprint: archive.signatureConfig.signatureCertificate,
+		metadataSize:           uint32(len(metadataData)),
+		metadata:               metadataData,
+		headerSize:             bacc.BaseBytesizeArchiveHeader + uint32(len(metadataData)),
 	}, nil
 }
 
@@ -70,7 +73,9 @@ func (ahw *archiveHeaderWriter) write(writer *writeBuffer) error {
 	if _, err := writer.writeUint32(ahw.headerSize); err != nil {
 		return err
 	}
-	writer.skip(8) // signature offset will be added later in the creation process
+	if _, err := writer.writeUint64(ahw.signatureOffset); err != nil {
+		return err
+	}
 	if _, err := writer.writeUint8(uint8(ahw.signatureMethod)); err != nil {
 		return err
 	}

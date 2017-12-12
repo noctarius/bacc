@@ -8,6 +8,9 @@ import (
 	"os"
 	"crypto/sha256"
 	"github.com/relations-one/bacc"
+	"crypto/rsa"
+	"fmt"
+	"strings"
 )
 
 type archive struct {
@@ -25,7 +28,82 @@ func (a *archive) RootEntry() bacc.ArchiveFolder {
 	return a.rootEntry
 }
 
-func (a *archive) Verify() (bool, error) {
+func (a *archive) ListLookupDirectory() {
+	a.printEntry(a.rootEntry, 0, false)
+}
+
+func (a *archive) Verify(allowUnsigned bool) (bool, error) {
+	success, err := a.checkFingerprint()
+	if err != nil {
+		return false, err
+	}
+	if !success {
+		return success, nil
+	}
+
+	if a.header.SignatureMethod == bacc.SIGMET_UNSINGED && !allowUnsigned {
+		return false, errors.New("unsigned archives are not allowed")
+	}
+
+	return a.checkSignature()
+}
+
+func (a *archive) printEntry(entry bacc.ArchiveEntry, indentation int, lastItem bool) {
+	for i := 0; i < indentation; i++ {
+		fmt.Print("│ ")
+	}
+	switch e := entry.(type) {
+	case bacc.ArchiveFolder:
+		fmt.Println("├ " + entry.Name())
+
+	case bacc.ArchiveFile:
+		var compressionRatio = float64(100)
+		if e.UncompressedSize() > 0 {
+			compressionRatio = float64(e.CompressedSize()) * 100.0 / float64(e.UncompressedSize())
+		}
+		if !lastItem {
+			fmt.Print("├ ")
+		} else {
+			fmt.Print("└ ")
+		}
+		fmt.Println(fmt.Sprintf("%s [%s, %s, %d] %.2f %%", strings.Replace(e.Name(), "\r", "", -1),
+			e.CompressionMethod().String(), e.EncryptionMethod().String(), e.ContentOffset(), compressionRatio))
+	}
+
+	switch e := entry.(type) {
+	case bacc.ArchiveFolder:
+		for i, child := range e.Entries() {
+			a.printEntry(child, indentation+1, uint32(i) == e.EntryCount()-1)
+		}
+	}
+}
+
+func (a *archive) checkSignature() (bool, error) {
+	key, err := bacc.LoadKeyForVerifying("test/public.pem")
+	if err != nil {
+		return false, err
+	}
+
+	file, err := os.Open(a.archivePath)
+	if err != nil {
+		return false, err
+	}
+
+	signatureOffset := int64(a.header.SignatureOffset)
+	signature := make([]byte, 256)
+	_, err = file.ReadAt(signature, signatureOffset)
+	if err != nil {
+		return false, err
+	}
+
+	err = key.Verify(file, signatureOffset, signature)
+	if err != nil && err != rsa.ErrVerification {
+		return false, err
+	}
+	return err == nil, nil
+}
+
+func (a *archive) checkFingerprint() (bool, error) {
 	file, err := os.Open(a.archivePath)
 	if err != nil {
 		return false, err
@@ -34,7 +112,7 @@ func (a *archive) Verify() (bool, error) {
 	signatureOffset := int64(a.header.SignatureOffset)
 
 	hasher := sha256.New()
-	buffer := make([]byte, 1024 * 1024)
+	buffer := make([]byte, 1024)
 
 	stat, err := file.Stat()
 	if err != nil {

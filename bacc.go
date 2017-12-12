@@ -170,5 +170,7 @@ type ArchiveFile interface {
 type Archive interface {
 	Header() *ArchiveHeader
 	RootEntry() ArchiveFolder
-	Verify() (bool, error)
+	ListLookupDirectory()
+	Verify(allowUnsigned bool) (bool, error)
+	//VerifyAsync(progress ProgressCallback, callback AsyncCallback, allowUnsigned bool)
 }

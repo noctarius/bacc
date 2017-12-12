@@ -7,11 +7,17 @@ import (
 	"github.com/relations-one/bacc"
 	"path/filepath"
 	"github.com/go-errors/errors"
+	"github.com/zealic/xignore"
 	"fmt"
 )
 
 type JsonParser struct {
 	verbose bool
+}
+
+type Archive struct {
+	signatureConfig *signatureConfig
+	root            *Entry
 }
 
 type Entry struct {
@@ -23,6 +29,7 @@ type Entry struct {
 	encryptionConfig  *encryptionConfig
 	signatureConfig   *signatureConfig
 	entries           []*Entry
+	ignoreMatcher     *xignore.IgnoreMatcher
 	metadata          map[string]interface{}
 	parent            *Entry
 }
@@ -47,18 +54,18 @@ func (e *Entry) fullPath() string {
 	return path
 }
 
-func (jp *JsonParser) ReadJsonDescriptor(jsonDescriptor string) (*Entry, error) {
+func (jp *JsonParser) ReadJsonDescriptor(jsonDescriptor string) (*Archive, error) {
 	descriptor, err := jp.unmarshallJsonDescriptor(jsonDescriptor)
 	if err != nil {
 		return nil, err
 	}
 
-	root, err := jp.beginParseJsonDescriptor(descriptor)
+	archive, err := jp.beginParseJsonDescriptor(descriptor)
 	if err != nil {
 		return nil, err
 	}
 
-	return root, nil
+	return archive, nil
 }
 
 func (jp *JsonParser) unmarshallJsonDescriptor(jsonDescriptor string) (map[string]interface{}, error) {
@@ -81,14 +88,37 @@ func (jp *JsonParser) unmarshallJsonDescriptor(jsonDescriptor string) (map[strin
 	return data.(map[string]interface{}), nil
 }
 
-func (jp *JsonParser) beginParseJsonDescriptor(descriptor map[string]interface{}) (*Entry, error) {
+func (jp *JsonParser) beginParseJsonDescriptor(descriptor map[string]interface{}) (*Archive, error) {
 	encryptionConfig := &encryptionConfig{
 		encryptionMethod: bacc.ENCMET_UNENCRYPTED,
 	}
 	signatureConfig := &signatureConfig{
 		signatureMethod: bacc.SIGMET_UNSINGED,
 	}
-	return jp.parseJsonDescriptor(descriptor, bacc.COMPMET_UNCOMPRESSED, encryptionConfig, signatureConfig, nil)
+
+	archive := &Archive{
+		signatureConfig: signatureConfig,
+	}
+
+	if jp.existsKey("signatureMethod", descriptor) {
+		archive.signatureConfig = jp.readSignatureConfig(descriptor)
+	}
+
+	rootDescriptor := descriptor["root"]
+	if rootDescriptor == nil {
+		return nil, errors.New("missing root element in the archive descriptor")
+	}
+
+	root, err := jp.parseJsonDescriptor(rootDescriptor.(map[string]interface{}),
+		bacc.COMPMET_UNCOMPRESSED, encryptionConfig, signatureConfig, nil)
+
+	if err != nil {
+		return nil, err
+	}
+
+	root.name = "root:/"
+	archive.root = root
+	return archive, nil
 }
 
 func (jp *JsonParser) parseJsonDescriptor(descriptor map[string]interface{}, compressionMethod bacc.CompressionMethod,
@@ -153,6 +183,16 @@ func (jp *JsonParser) parseFolder(descriptor map[string]interface{}, compression
 		entry.signatureConfig = jp.readSignatureConfig(descriptor)
 	}
 
+	excludes := descriptor["excludes"]
+	if excludes != nil {
+		excludeDefs := excludes.([]interface{})
+		patterns := make([]string, len(excludeDefs))
+		for i := range excludeDefs {
+			patterns[i] = excludeDefs[i].(string)
+		}
+		entry.ignoreMatcher = xignore.New(patterns)
+	}
+
 	md := descriptor["metadata"]
 	if md != nil {
 		entry.metadata = md.(map[string]interface{})
@@ -179,22 +219,24 @@ func (jp *JsonParser) parseFolder(descriptor map[string]interface{}, compression
 				return nil, err
 			}
 
-			found := false
-			for i, e := range entry.entries {
-				if e.name == child.name {
-					found = true
-					entry.entries[i] = child
+			if child != nil {
+				found := false
+				for i, e := range entry.entries {
+					if e.name == child.name {
+						found = true
+						entry.entries[i] = child
+					}
 				}
-			}
 
-			if !found {
-				entry.entries = append(entry.entries, child)
+				if !found {
+					entry.entries = append(entry.entries, child)
+				}
 			}
 		}
 	}
 
-	if jp.verbose {
-		fmt.Println(fmt.Sprintf("Adding %s", entry.fullPath()))
+	if jp.verbose && entry.fullPath() != "" {
+		fmt.Println(fmt.Sprintf("Adding %s [FOLDER, explicitly defined]", entry.fullPath()))
 	}
 
 	return entry, nil
@@ -209,6 +251,11 @@ func (jp *JsonParser) scanFolder(entry *Entry, folder *os.File, compressionMetho
 
 	for _, name := range names {
 		path := filepath.Join(folder.Name(), name)
+
+		if jp.isIgnored(path, entry) {
+			continue
+		}
+
 		child, err := os.Open(path)
 		if err != nil {
 			return err
@@ -241,6 +288,27 @@ func (jp *JsonParser) scanFolder(entry *Entry, folder *os.File, compressionMetho
 	return nil
 }
 
+func (jp *JsonParser) isIgnored(path string, entry *Entry) bool {
+	parent := entry
+	var ignoreMatcher *xignore.IgnoreMatcher = nil
+	for {
+		if ignoreMatcher != nil || parent == nil {
+			break
+		}
+		ignoreMatcher = parent.ignoreMatcher
+		parent = parent.parent
+	}
+	if ignoreMatcher == nil {
+		return false
+	}
+
+	matches, err := ignoreMatcher.Matches(path)
+	if err != nil {
+		panic(err)
+	}
+	return matches
+}
+
 func (jp *JsonParser) createScannedFolder(folder *os.File, compressionMethod bacc.CompressionMethod,
 	encryptionConfig *encryptionConfig, signatureConfig *signatureConfig, parent *Entry) (*Entry, error) {
 
@@ -262,8 +330,8 @@ func (jp *JsonParser) createScannedFolder(folder *os.File, compressionMethod bac
 		parent:            parent,
 	}
 
-	if jp.verbose {
-		fmt.Println(fmt.Sprintf("Adding %s", entry.fullPath()))
+	if jp.verbose && entry.fullPath() != "" {
+		fmt.Println(fmt.Sprintf("Adding %s [FOLDER, added by directory scan]", entry.fullPath()))
 	}
 
 	return entry, nil
@@ -289,8 +357,8 @@ func (jp *JsonParser) createScannedFile(file *os.File, compressionMethod bacc.Co
 		parent:            parent,
 	}
 
-	if jp.verbose {
-		fmt.Println(fmt.Sprintf("Adding %s", entry.fullPath()))
+	if jp.verbose && entry.fullPath() != ""{
+		fmt.Println(fmt.Sprintf("Adding %s [FILE, added by directory scan]", entry.fullPath()))
 	}
 
 	return entry, nil
@@ -335,8 +403,8 @@ func (jp *JsonParser) parseFile(descriptor map[string]interface{}, compressionMe
 
 	entry.metadata = jp.parseMetadata(descriptor)
 
-	if jp.verbose {
-		fmt.Println(fmt.Sprintf("Adding %s", entry.fullPath()))
+	if jp.verbose && entry.fullPath() != "" {
+		fmt.Println(fmt.Sprintf("Adding %s [FILE, explicitly defined]", entry.fullPath()))
 	}
 
 	return entry, nil

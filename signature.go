@@ -14,11 +14,11 @@ import (
 )
 
 type Signer interface {
-	Sign(reader io.ReaderAt) ([]byte, error)
+	Sign(reader io.ReaderAt, signatureOffset int64) ([]byte, error)
 }
 
 type Verifier interface {
-	Verify(reader io.ReaderAt, signature []byte) error
+	Verify(reader io.ReaderAt, signatureOffset int64, signature []byte) error
 }
 
 type rsaPrivateKey struct {
@@ -82,23 +82,23 @@ func parsePublicKey(data []byte) (Verifier, error) {
 	return nil, errors.New("given key is not a RSA public key")
 }
 
-func (rpk *rsaPrivateKey) Sign(reader io.ReaderAt) ([]byte, error) {
-	hash, err := generateHash(reader, func() hash.Hash { return sha512.New() })
+func (rpk *rsaPrivateKey) Sign(reader io.ReaderAt, signatureOffset int64) ([]byte, error) {
+	hash, err := generateHash(reader, signatureOffset, func() hash.Hash { return sha512.New() })
 	if err != nil {
 		return nil, err
 	}
 	return rsa.SignPKCS1v15(rand.Reader, rpk.PrivateKey, crypto.SHA512, hash)
 }
 
-func (rpk *rsaPublicKey) Verify(reader io.ReaderAt, signature []byte) error {
-	hash, err := generateHash(reader, func() hash.Hash { return sha512.New() })
+func (rpk *rsaPublicKey) Verify(reader io.ReaderAt, signatureOffset int64, signature []byte) error {
+	hash, err := generateHash(reader, signatureOffset, func() hash.Hash { return sha512.New() })
 	if err != nil {
 		return err
 	}
 	return rsa.VerifyPKCS1v15(rpk.PublicKey, crypto.SHA512, hash, signature)
 }
 
-func generateHash(reader io.ReaderAt, hasherFactory func() hash.Hash) ([]byte, error) {
+func generateHash(reader io.ReaderAt, signatureOffset int64, hasherFactory func() hash.Hash) ([]byte, error) {
 	hasher := hasherFactory()
 	buffer := make([]byte, 1024)
 
@@ -109,10 +109,16 @@ func generateHash(reader io.ReaderAt, hasherFactory func() hash.Hash) ([]byte, e
 			return nil, err
 		}
 
+		breakOut := false
+		if offset+int64(bytes) >= signatureOffset {
+			bytes = int(signatureOffset - offset)
+			breakOut = true
+		}
+
 		hasher.Write(buffer[:bytes])
 		offset += int64(bytes)
 
-		if err == io.EOF {
+		if err == io.EOF || breakOut {
 			break
 		}
 	}

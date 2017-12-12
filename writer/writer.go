@@ -24,21 +24,22 @@ func NewPackager(verbose bool) *Packager {
 	return &Packager{verbose, bacc.ADDRESSING_64BIT}
 }
 
-func (p *Packager) WriteArchive(archivePath string, archiveDefinition *Entry, force64bit bool) error {
+func (p *Packager) WriteArchive(archivePath string, archiveDefinition *Archive, force64bit bool) error {
+	root := archiveDefinition.root
 	if !force64bit {
-		val, err := p.is64bitNecessary(archiveDefinition)
+		val, err := p.is64bitNecessary(root)
 		if err != nil {
 			return err
 		}
 		p.addressingMode = val
 	}
 
-	header, err := createHeader(p.addressingMode, nil)
+	header, err := createHeader(archiveDefinition, p.addressingMode, nil)
 	if err != nil {
 		return err
 	}
 
-	directory, offset, err := p.buildArchiveEntryHeader(archiveDefinition, int64(header.headerSize))
+	directory, offset, err := p.buildArchiveEntryHeader(root, int64(header.headerSize))
 	if err != nil {
 		return err
 	}
@@ -61,6 +62,7 @@ func (p *Packager) WriteArchive(archivePath string, archiveDefinition *Entry, fo
 		// Set signature offset to last element in the archive
 		header.signatureOffset = uint64(offset)
 	}
+
 	writer.offset = 0
 	if err := header.write(writer); err != nil {
 		return err
@@ -74,7 +76,7 @@ func (p *Packager) WriteArchive(archivePath string, archiveDefinition *Entry, fo
 
 	checksumArchive(archivePath, header.calculateChecksumOffset())
 
-	signArchive(archivePath, "test/private.pem")
+	signArchive(archivePath, int64(header.signatureOffset), "test/private.pem")
 
 	return nil
 }
@@ -287,15 +289,18 @@ func (p *Packager) pushFileContent(writer *writeBuffer, source *archiveFileWrite
 	if source.compressionMethod == bacc.COMPMET_UNCOMPRESSED &&
 		source.encryptionMethod == bacc.ENCMET_UNENCRYPTED {
 
-		return copyFileContent(writer, source)
+		return p.copyFileContent(writer, source)
 	}
 
-	return compressAndEncryptFileContent(writer, source, source.key)
+	return p.compressAndEncryptFileContent(writer, source, source.key)
 }
 
-func compressAndEncryptFileContent(writer *writeBuffer, source *archiveFileWriter, key []byte) (int64, error) {
+func (p *Packager) compressAndEncryptFileContent(writer *writeBuffer, source *archiveFileWriter, key []byte) (int64, error) {
+	// Mark the current offset for size calculation
+	writer.mark()
+
 	s := source.file
-	rb := make([]byte, 1024 * 1024)
+	rb := make([]byte, 1024*1024)
 
 	var w io.Writer
 	switch source.encryptionMethod {
@@ -341,7 +346,6 @@ func compressAndEncryptFileContent(writer *writeBuffer, source *archiveFileWrite
 
 	so := int64(0)
 	size := stat.Size()
-	writer.mark()
 
 	for ; so < size; {
 		length := min(int64(len(rb)), size-so)
@@ -361,13 +365,20 @@ func compressAndEncryptFileContent(writer *writeBuffer, source *archiveFileWrite
 		c.Close()
 	}
 
-	fmt.Println(" 100%")
 	written := writer.writtenSinceMarker()
+
+	if p.verbose {
+		fmt.Println(fmt.Sprintf(" 100%% - Compressed from %d to %d => %.2f %%",
+			size, written, float64(written)*100./float64(size)))
+	} else {
+		fmt.Println(" 100%")
+	}
+
 	return written, nil
 }
 
-func copyFileContent(writer *writeBuffer, source *archiveFileWriter) (int64, error) {
-	buffer := make([]byte, 1024 * 1024)
+func (p *Packager) copyFileContent(writer *writeBuffer, source *archiveFileWriter) (int64, error) {
+	buffer := make([]byte, 1024*1024)
 	s := source.file
 	stat, err := s.Stat()
 	if err != nil {
@@ -401,7 +412,7 @@ func checksumArchive(archivePath string, checksumOffset int64) error {
 	}
 
 	hasher := sha256.New()
-	buffer := make([]byte, 1024 * 1024)
+	buffer := make([]byte, 1024*1024)
 
 	stat, err := file.Stat()
 	if err != nil {
@@ -430,7 +441,7 @@ func checksumArchive(archivePath string, checksumOffset int64) error {
 	}
 
 	checksum := hasher.Sum(nil)
-	fmt.Println(" 100%")
+	fmt.Println(fmt.Sprintf(" 100%% (%d)", offset))
 	fmt.Println("Checksum: " + hex.EncodeToString(checksum))
 
 	if _, err := file.WriteAt(checksum, checksumOffset); err != nil {
@@ -439,7 +450,7 @@ func checksumArchive(archivePath string, checksumOffset int64) error {
 	return file.Close()
 }
 
-func signArchive(archivePath string, keyPath string) error {
+func signArchive(archivePath string, signatureOffset int64, keyPath string) error {
 	fmt.Print("Signing archive: ")
 	file, err := os.Open(archivePath)
 	if err != nil {
@@ -451,7 +462,7 @@ func signArchive(archivePath string, keyPath string) error {
 		return err
 	}
 
-	signature, err := signer.Sign(file)
+	signature, err := signer.Sign(file, signatureOffset)
 	if err != nil {
 		return err
 	}
