@@ -13,7 +13,7 @@ BACC or the Binary Archive Compression Cabinet is the main compression format us
 
 The file format is also designed for fast opening by having a full directory structure at the beginning of the file, following the initial header, and storing actual archive content after the lookup dictionary.
 
-Internally, ZAC uses either 32 bit or 64 bit addressing and location pointers based on a tag in the file's header. If either is selected all (except the signature pointer) internal addressing is using the same scheme.
+Internally, BACC uses either 32 bit or 64 bit addressing and location pointers based on a tag in the file's header. If either is selected all (except the signature pointer) internal addressing is using the same scheme.
 
 Furthermore items inside the BACC file can be encrypted. The selected for encryption can done by file and keys are referenced using a fingerprint of the key. Possible encryption algorithms are AES-256 or Twofish-256 for symmetric, as well as RSA-2048 for asymmetric encryption.
 
