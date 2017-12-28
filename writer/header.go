@@ -24,9 +24,13 @@ type archiveHeaderWriter struct {
 func createHeader(archive *Archive, addressingMode bacc.AddressingMode,
 	metadata map[string]interface{}) (*archiveHeaderWriter, error) {
 
-	metadataData, err := serialize(metadata)
-	if err != nil {
-		return nil, err
+	var metadataData []byte = nil
+	if metadata != nil && len(metadata) > 0 {
+		md, err := serialize(metadata)
+		if err != nil {
+			return nil, err
+		}
+		metadataData = md
 	}
 
 	bitflag := uint8(0)

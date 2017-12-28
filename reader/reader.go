@@ -8,7 +8,12 @@ import (
 )
 
 type Reader struct {
+	keyManager     bacc.KeyManager
 	addressingMode bacc.AddressingMode
+}
+
+func NewReader(keyManager bacc.KeyManager) *Reader {
+	return &Reader{keyManager: keyManager}
 }
 
 func (r *Reader) ReadArchive(archivePath string) (bacc.Archive, error) {
@@ -23,7 +28,7 @@ func (r *Reader) ReadArchive(archivePath string) (bacc.Archive, error) {
 	}
 
 	r.addressingMode = header.AddressingMode()
-	rootEntry, err := r.readEntry(reader, int64(header.HeaderSize))
+	rootEntry, err := r.readEntry(reader, int64(header.headerSize))
 
 	archive := &archive{
 		reader:      reader,
@@ -35,9 +40,9 @@ func (r *Reader) ReadArchive(archivePath string) (bacc.Archive, error) {
 	return archive, nil
 }
 
-func (r *Reader) readHeader(reader *reader) (*bacc.ArchiveHeader, error) {
-	header := &bacc.ArchiveHeader{
-		Metadata: make(map[string]interface{}),
+func (r *Reader) readHeader(reader *reader) (*archiveHeader, error) {
+	header := &archiveHeader{
+		metadata: make(map[string]interface{}),
 	}
 
 	offset := int64(0)
@@ -60,8 +65,8 @@ func (r *Reader) readHeader(reader *reader) (*bacc.ArchiveHeader, error) {
 	}
 	offset += 1
 
-	header.MagicHeader = magic
-	header.Version = version
+	header.magicHeader = magic
+	header.version = version
 
 	bitflag, err := reader.readUint8(offset)
 	if err != nil {
@@ -69,12 +74,12 @@ func (r *Reader) readHeader(reader *reader) (*bacc.ArchiveHeader, error) {
 	}
 	offset += 1
 
-	header.Bitflag = bitflag
+	header.bitflag = bitflag
 
-	if err := reader.readBuffer(header.Checksum[:], offset); err != nil {
+	if err := reader.readBuffer(header.checksum[:], offset); err != nil {
 		return nil, err
 	}
-	offset += int64(len(header.Checksum))
+	offset += int64(len(header.checksum))
 
 	headerSize, err := reader.readUint32(offset)
 	if err != nil {
@@ -82,7 +87,7 @@ func (r *Reader) readHeader(reader *reader) (*bacc.ArchiveHeader, error) {
 	}
 	offset += 4
 
-	header.HeaderSize = headerSize
+	header.headerSize = headerSize
 
 	signatureOffset, err := reader.readUint64(offset)
 	if err != nil {
@@ -90,7 +95,7 @@ func (r *Reader) readHeader(reader *reader) (*bacc.ArchiveHeader, error) {
 	}
 	offset += 8
 
-	header.SignatureOffset = signatureOffset
+	header.signatureOffset = signatureOffset
 
 	signatureMethod, err := reader.readUint8(offset)
 	if err != nil {
@@ -98,41 +103,44 @@ func (r *Reader) readHeader(reader *reader) (*bacc.ArchiveHeader, error) {
 	}
 	offset += 1
 
-	header.SignatureMethod = bacc.SignatureMethod(signatureMethod)
+	header.signatureMethod = bacc.SignatureMethod(signatureMethod)
 
 	fingerprint := make([]byte, 32)
 	if err := reader.readBuffer(fingerprint, offset); err != nil {
 		return nil, err
 	}
-	header.CertificateFingerprint = hex.EncodeToString(fingerprint)
+	header.certificateFingerprint = hex.EncodeToString(fingerprint)
 	offset += 32
 
-	if err := r.readMetadata(reader, offset, &header.Metadata); err != nil {
+	if table, err := r.readMetadata(reader, offset); err != nil {
 		return nil, err
+	} else {
+		header.metadata = table
 	}
 
 	return header, nil
 }
 
-func (r *Reader) readMetadata(reader *reader, offset int64, table *map[string]interface{}) error {
+func (r *Reader) readMetadata(reader *reader, offset int64) (map[string]interface{}, error) {
 	metadataSize, err := reader.readUint24(offset)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	offset += 3
 
+	var table map[string]interface{}
 	if metadataSize > 0 {
 		buffer := make([]byte, metadataSize)
-		reader.readBuffer(buffer, 52)
+		reader.readBuffer(buffer, offset)
 		t, err := deserialize(buffer)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		table = &t
+		table = t
 	} else {
-		table = new(map[string]interface{})
+		table = make(map[string]interface{}, 0)
 	}
-	return nil
+	return table, nil
 }
 
 func (r *Reader) readEntry(reader *reader, offset int64) (bacc.ArchiveEntry, error) {
@@ -205,8 +213,10 @@ func (r *Reader) readFolder(reader *reader, offset int64, name string,
 		return nil, err
 	}
 
-	if err := r.readMetadata(reader, offset, &entry.metadata); err != nil {
+	if table, err := r.readMetadata(reader, offset); err != nil {
 		return nil, err
+	} else {
+		entry.metadata = table
 	}
 	offset += int64(metadataSize) + 3
 
@@ -330,8 +340,10 @@ func (r *Reader) readFile(reader *reader, offset int64, name string,
 		return nil, err
 	}
 
-	if err := r.readMetadata(reader, offset, &entry.metadata); err != nil {
+	if table, err := r.readMetadata(reader, offset); err != nil {
 		return nil, err
+	} else {
+		entry.metadata = table
 	}
 	offset += int64(metadataSize) + 3
 
@@ -355,6 +367,7 @@ type reader struct {
 
 func newReader(file *os.File) (*reader, error) {
 	r := &reader{
+
 		file:  file,
 		chunk: make([]byte, 1024),
 	}

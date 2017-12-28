@@ -7,21 +7,21 @@ import (
 	"compress/gzip"
 	"crypto/sha256"
 	"github.com/relations-one/bacc"
-	"errors"
 	"time"
 	"strings"
-	"hash"
 	"fmt"
 	"github.com/hsinhoyeh/gobzip"
+	"github.com/go-errors/errors"
 )
 
 type Packager struct {
+	keyManager     bacc.KeyManager
 	verbose        bool
 	addressingMode bacc.AddressingMode
 }
 
-func NewPackager(verbose bool) *Packager {
-	return &Packager{verbose, bacc.ADDRESSING_64BIT}
+func NewPackager(keyManager bacc.KeyManager, verbose bool) *Packager {
+	return &Packager{keyManager, verbose, bacc.ADDRESSING_64BIT}
 }
 
 func (p *Packager) WriteArchive(archivePath string, archiveDefinition *Archive, force64bit bool) error {
@@ -109,13 +109,13 @@ func (p *Packager) createFolder(entry *Entry, offset int64) (*archiveFolderWrite
 
 	metadataSize := uint32(0)
 	var metadataBytes []byte
-	if entry.metadata != nil {
-		metadataSize = uint32(len(entry.metadata))
+	if entry.metadata != nil && len(entry.metadata) > 0 {
 		bytes, err := serialize(entry.metadata)
 		if err != nil {
 			return nil, -1, err
 		}
 		metadataBytes = bytes
+		metadataSize = uint32(len(metadataBytes))
 		headerSize += uint32(len(metadataBytes))
 	}
 
@@ -163,13 +163,13 @@ func (p *Packager) createFile(entry *Entry, offset int64) (*archiveFileWriter, i
 
 	metadataSize := uint32(0)
 	var metadataBytes []byte
-	if entry.metadata != nil {
-		metadataSize = uint32(len(entry.metadata))
+	if entry.metadata != nil && len(entry.metadata) > 0 {
 		bytes, err := serialize(entry.metadata)
 		if err != nil {
 			return nil, -1, err
 		}
 		metadataBytes = bytes
+		metadataSize = uint32(len(metadataBytes))
 		headerSize += uint32(len(metadataBytes))
 	}
 
@@ -183,8 +183,20 @@ func (p *Packager) createFile(entry *Entry, offset int64) (*archiveFileWriter, i
 
 	uncompressedSize := uint64(stat.Size())
 
-	reader := strings.NewReader(entry.encryptionConfig.encryptionKey)
-	keyHash, err := generateHash(reader, func() hash.Hash { return sha256.New() })
+	fingerprint := ""
+	encryptionMethod := entry.encryptionConfig.encryptionMethod
+	if encryptionMethod == bacc.ENCMET_AES256 || encryptionMethod == bacc.ENCMET_TWOFISH256 {
+		fingerprint = entry.encryptionConfig.encryptionKey
+
+	} else if encryptionMethod == bacc.ENCMET_RSA_PRIVATE || encryptionMethod == bacc.ENCMET_RSA_PUBLIC {
+		fingerprint = entry.encryptionConfig.encryptionCertificate
+	}
+
+	key, err := p.keyManager.GetKey(fingerprint)
+	if err != nil {
+		return nil, -1, errors.New(err)
+	}
+	keyFingerprint, err := p.serializeFingerprint(fingerprint)
 	if err != nil {
 		return nil, -1, err
 	}
@@ -197,13 +209,32 @@ func (p *Packager) createFile(entry *Entry, offset int64) (*archiveFileWriter, i
 		addressingMode:    p.addressingMode,
 		uncompressedSize:  uncompressedSize,
 		compressionMethod: entry.compressionMethod,
-		encryptionMethod:  entry.encryptionConfig.encryptionMethod,
-		key:               []byte(entry.encryptionConfig.encryptionKey),
-		keyFingerprint:    keyHash,
+		encryptionMethod:  encryptionMethod,
+		key:               key,
+		keyFingerprint:    keyFingerprint,
 		metadataSize:      metadataSize,
 		metadata:          metadataBytes,
 		offset:            offset,
 	}, offset + int64(headerSize), nil
+}
+
+func (p *Packager) serializeFingerprint(fingerprint string) ([]byte, error) {
+	if strings.TrimSpace(fingerprint) == "" {
+		return make([]byte, 32), nil
+	}
+
+	fingerprint = strings.Replace(fingerprint, "-", "", -1)
+
+	lenFingerprint := len(fingerprint)
+	if lenFingerprint > 32 {
+		return nil, errors.New("Fingerprint cannot be longer than 32 characters")
+	}
+
+	if lenFingerprint < 32 {
+		fingerprint = strings.Repeat("0", 32-lenFingerprint) + fingerprint
+	}
+
+	return []byte(fingerprint), nil
 }
 
 func (p *Packager) is64bitNecessary(entry *Entry) (bacc.AddressingMode, error) {
@@ -442,7 +473,7 @@ func checksumArchive(archivePath string, checksumOffset int64) error {
 
 	checksum := hasher.Sum(nil)
 	fmt.Println(fmt.Sprintf(" 100%% (%d)", offset))
-	fmt.Println("Checksum: " + hex.EncodeToString(checksum))
+	fmt.Println("checksum: " + hex.EncodeToString(checksum))
 
 	if _, err := file.WriteAt(checksum, checksumOffset); err != nil {
 		return err

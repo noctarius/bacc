@@ -29,6 +29,11 @@ func (fe *fileEntry) Verify(callback bacc.AsyncCallback) {
 }
 
 func (fe *fileEntry) Extract(progress bacc.ProgressCallback, callback bacc.AsyncCallback) {
+	contentOffset := fe.contentOffset
+	compressedSize := fe.compressedSize
+
+	progress()
+
 	panic("implement me")
 }
 

@@ -13,7 +13,7 @@ const (
 
 type AsyncCallback func(result bool, err error)
 
-type ProgressCallback func(uncompressedSize uint64, extracted uint64, progress float32)
+type ProgressCallback func(total uint64, processed uint64, progress float32)
 
 type AddressingMode uint8
 
@@ -116,20 +116,19 @@ const (
 	ENTRY_TYPE_FILE   EntryType = 0x01
 )
 
-type ArchiveHeader struct {
-	MagicHeader            uint16
-	Version                uint8
-	Bitflag                uint8
-	Checksum               [32]byte
-	HeaderSize             uint32
-	SignatureOffset        uint64
-	SignatureMethod        SignatureMethod
-	CertificateFingerprint string
-	Metadata               map[string]interface{}
-}
-
-func (header *ArchiveHeader) AddressingMode() AddressingMode {
-	return AddressingMode((header.Bitflag >> 7) & 1)
+type ArchiveHeader interface {
+	MagicHeader() uint16
+	Version() uint8
+	Bitflag() uint8
+	Checksum() [32]byte
+	HeaderSize() uint32
+	SignatureOffset() uint64
+	SignatureMethod() SignatureMethod
+	CertificateFingerprint() string
+	Metadata() map[string]interface{}
+	AddressingMode() AddressingMode
+	Verify(allowUnsigned bool) (bool, error)
+	//VerifyAsync(progress ProgressCallback, callback AsyncCallback, allowUnsigned bool)
 }
 
 type ArchiveEntry interface {
@@ -168,7 +167,7 @@ type ArchiveFile interface {
 }
 
 type Archive interface {
-	Header() *ArchiveHeader
+	Header() ArchiveHeader
 	RootEntry() ArchiveFolder
 	ListLookupDirectory()
 	Verify(allowUnsigned bool) (bool, error)

@@ -1,0 +1,251 @@
+= BACC - Binary Archive Compression Cabinet Format
+Christoph Engelbert <https://github.com/noctarius[@noctarius2k]>
+Relations.One Digital GmbH
+// Settings:
+:compat-mode!:
+:idseperator: -
+// Aliases:
+:project-name: BACC - Binary Archive Compression Cabinet Format
+:project-handle: binary-archive-compression-cabinet
+:toc:
+
+BACC or the Binary Archive Compression Cabinet is the main compression format used in the Zodiac embedded platform. It is influenced by the ZIP file format but adds important elements such as digital signature verification and different compression levels per item inside the data stream.
+
+The file format is also designed for fast opening by having a full directory structure at the beginning of the file, following the initial header, and storing actual archive content after the lookup dictionary.
+
+Internally, ZAC uses either 32 bit or 64 bit addressing and location pointers based on a tag in the file's header. If either is selected all (except the signature pointer) internal addressing is using the same scheme.
+
+Furthermore items inside the BACC file can be encrypted. The selected for encryption can done by file and keys are referenced using a fingerprint of the key. Possible encryption algorithms are AES-256 or Twofish-256 for symmetric, as well as RSA-2048 for asymmetric encryption.
+
+Same as encryption, the digital signature feature can be set by item. In addition the overall BACC file itself is always digitally signed to prevent changes after its creation. The hash function in use is SHA2-512 with an RSA-2048 signature for verification. The signature verification certificate is again selected based on the fingerprint of the certificate.
+
+All certificate and symmetric key fingerprints are calculated using and stored as SHA2-256.
+
+Numbers are always encoded in BigEndian byte order.
+
+== BACC File Header Definition
+
+|===
+| Value | Size | Offset | Description
+
+| Magic header
+| 2 bytes
+| 0x00
+| The BACC file magic header, always *0xBACC*.
+
+| File format version
+| 1 byte
+| 0x02
+| The version of the BACC file, normally always *0x01*.
+
+| Bitflags
+| 1 byte
+| 0x03
+| General purpose bitflag field, see the <<BACC General Bitfield>> section.
+
+| Quick checksum
+| 32 bytes
+| 0x04
+| SHA2-256 checksum, only for verification of successful download. Contains all bytes, except the attached file signature (at the end of the file).
+
+| Header size
+| 4 bytes
+| 0x24
+| An unsigned 32 bit size value, defining the overall size of the file's header.
+
+| Signature offset
+| 8 bytes
+| 0x28
+| An unsigned 64 bit pointer to the begin of the file's signature. The signature is always SHA2-512 with RSA-2048. Furthermore the signature is always attached at the very end of the file, to sign files after all content is written.
+
+| Signature method
+| 1 byte
+| 0x30
+| The signature / verification method being used to sign this archive.
+
+  *0x00*: unsigned +
+  *0x01*: SHA2-512 + RSA-2048 (signed with private) +
+  *0x02*: SHA2-512 + RSA-2048 (signed with public)
+
+| Certificate fingerprint
+| 32 bytes
+| 0x31
+| Unique ID (e.g. SHA2-256 fingerprint) of the private-public keypair. In difference from certificate fingerprints for files, this fingerprint is always available, as production archives are expected to be signed.
+
+| Metadata section
+| variable
+| 0x51
+| Contains additional metadata records to specify application specific data. See the <<Metadata Record Format>> section.
+|===
+
+Following the file header the BACC file contains the central directory which contains all folders and files stored inside the archive. See more information in the <<Central Directory>> section.
+
+== BACC General Bitfield
+
+This bitfield encodes some of the general configuration properties. The bitfield is encoded left to right, therefore bit 0, is to the left.
+
+
+|===
+| Value | Size | Offset | Description
+
+| Addressing scheme
+| 1 bit
+| 0
+| The internally used addressing scheme.
+
+  *0x0*: 32bit addressing +
+  *0x1*: 64bit addressing
+|===
+
+Later versions of the BACC format might define additional bit field values.
+
+== Metadata Record Format
+
+The metadata size is represented as a 3 byte unsigned integer to prevent exceeding the maximum size of a archive header which is represented as 32 bit no matter of the internal addressing scheme.
+
+|===
+| Value | Size | Offset | Description
+
+| Metatable size
+| 3 bytes
+| 0x00
+| Unsigned 3 bytes integer containing the bytesize of the following CBOR metatable. If the value is 0, no metadata is available.
+
+| Metatable
+| variable
+| 0x03
+| The CBOR encoded metatable. See information below
+|===
+
+The metadata is stored as a CBOR encoded table. However keys always need to be of type string to be considered a valid metadata entry. Implementations of the readers are considered to test this restriction before using the actual data.
+
+== Central Directory
+
+The central directory contains all folder and file headers of the archive. Each element either represents a folder, pointing to a folder  entry, or a file, pointing to the file's content.
+
+The central directory is always positioned directly following the BACC file's header.
+
+The central directory therefore consists of 2 types of entries, folder entry or file entry. The top most entry is always a folder entry, also called root entry.
+
+The pointer size of entries depends on the configured address size from the <<BACC General Bitfield>> section and is depending on that either 4 or 8 bytes. Therefore the following tables use _Pointer_ as the size value to be of either value.
+
+=== Folder Entry
+
+An Folder Entry header is limited to a maximum size of 4 bytes (unsigned 32 bits).
+
+
+|===
+| Value | Size | Offset | Description
+
+| Name
+| variable
+| 0x00
+| An UTF-8 encoded, null terminated, variable-length string, defining the name of the folder entry. Even though UTF-8 naming is possible, it is highly encouraged to use ASCII characters only.
+
+| Timestamp
+| 8 bytes
+| 0x00 + len(Name)
+| An unsigned 64 bit timestamp using nanos, starting from 1970-01-01 00:00:00.000. The timestamp will be set for access and modification time on extraction.
+
+| Entry type
+| 1 byte
+| 0x08 + len(Name)
+| Type of the entry, for folders this is always *0x00*.
+
+| Entry header size
+| 4 bytes
+| 0x09 + len(Name)
+| An unsigned 32 bit size value, defining the overall size of this folder entry header.
+
+| Entry count
+| 4 bytes
+| 0x0D + len(Name)
+| An unsigned 32 bit value defining the number of entries inside the folder. All entries directly follow up this folder's header. After all entries are defined, the next element will be the same level as this entry again.
+
+Every defined child entry may be of type folder entry or file entry.
+
+| Metadata section
+| variable
+| 0x11 + len(Name)
+| Contains additional metadata records to specify application specific data. See the <<Metadata Record Format>> section.
+|===
+
+
+=== File Entry
+
+The following table doesn't contain offset definitions as offsets depend on the addressing scheme chosen, as well as on encryption and signature of every single entry. Therefore the offsets change based on the given entry's configuration.
+
+|===
+| Value | Size | Description
+
+| Name
+| variable
+| An UTF-8 encoded, null terminated, variable-length string, defining the name of the folder entry. Even though UTF-8 naming is possible, it is highly encouraged to use ASCII characters only.
+
+| Timestamp
+| 8 bytes
+| An unsigned 64 bit timestamp using nanos, starting from 1970-01-01 00:00:00.000. The timestamp will be set for access and modification time on extraction.
+
+| Entry type
+| 1 byte
+| Type of the entry, for files this is always *0x01*.
+
+| Entry header size
+| 4 bytes
+| An unsigned 32 bit size value, defining the overall size of this file entry header.
+
+| Compressed size
+| _Pointer_
+| The compressed size of the file's content.
+
+| Uncompressed size
+| _Pointer_
+| The uncompressed size of the file's content.
+
+| Content offset
+| _Pointer_
+| The pointer to the actual (maybe encrypted and/or compressed) file content in absolute bytes from the beginning of the file.
+
+| Compression method
+| 1 byte
+| The compression method being used to compress this entry's content.
+
+  *0x00*: uncompressed +
+  *0x01*: gzip compression0x02: bzip2 compression
+
+| Encryption method
+| 1 byte
+| The encryption method being used to encrypt this entry's content.
+
+  *0x00*: unencrypted +
+  *0x01*: AES-256 +
+  *0x02*: Twofish-256 +
+  *0x03*: RSA-2048 (encrypted with private) +
+  *0x04*: RSA-2048 (encrypted with public)
+
+| Key fingerprint
+| 32 bytes
+| SHA2-256 fingerprint of the symmetric key or the private-public keypair used to encrypt this file. Only available if Encryption Method is not *0x00* (unencrypted).
+
+| Signature method
+| 1 byte
+| The signature / verification method being used to sign this entry's content.
+
+  *0x00*: unsigned +
+  *0x01*: SHA2-512 + RSA-2048 (signed with private) +
+  *0x02*: SHA2-512 + RSA-2048 (signed with public)
+
+| Certificate fingerprint
+| 32 bytes
+| SHA2-256 fingerprint of the private-public keypair used to sign this file. Only available if Signature Method is not *0x00* (unsigned).
+
+| Signature
+| 256 bytes
+| Signature of the file's content and the file's header, except the 256 signature bytes which are all zeroed out. Only available if Signature Method is not *0x00* (unsigned).
+
+| Metadata section
+| variable
+| Contains additional metadata records to specify application specific data. See the <<Metadata Record Format>> section.
+
+|===
+

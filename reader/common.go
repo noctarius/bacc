@@ -14,13 +14,13 @@ import (
 )
 
 type archive struct {
-	header      *bacc.ArchiveHeader
+	header      bacc.ArchiveHeader
 	rootEntry   bacc.ArchiveFolder
 	reader      *reader
 	archivePath string
 }
 
-func (a *archive) Header() *bacc.ArchiveHeader {
+func (a *archive) Header() bacc.ArchiveHeader {
 	return a.header
 }
 
@@ -41,7 +41,7 @@ func (a *archive) Verify(allowUnsigned bool) (bool, error) {
 		return success, nil
 	}
 
-	if a.header.SignatureMethod == bacc.SIGMET_UNSINGED && !allowUnsigned {
+	if a.header.SignatureMethod() == bacc.SIGMET_UNSINGED && !allowUnsigned {
 		return false, errors.New("unsigned archives are not allowed")
 	}
 
@@ -66,8 +66,9 @@ func (a *archive) printEntry(entry bacc.ArchiveEntry, indentation int, lastItem 
 		} else {
 			fmt.Print("└ ")
 		}
-		fmt.Println(fmt.Sprintf("%s [%s, %s, %d] %.2f %%", strings.Replace(e.Name(), "\r", "", -1),
-			e.CompressionMethod().String(), e.EncryptionMethod().String(), e.ContentOffset(), compressionRatio))
+		fmt.Println(fmt.Sprintf("%s [%s, %s, %d] %.2f %%, metadata: %s",
+			strings.Replace(e.Name(), "\r", "", -1), e.CompressionMethod().String(),
+			e.EncryptionMethod().String(), e.ContentOffset(), compressionRatio, e.Metadata()))
 	}
 
 	switch e := entry.(type) {
@@ -89,7 +90,7 @@ func (a *archive) checkSignature() (bool, error) {
 		return false, err
 	}
 
-	signatureOffset := int64(a.header.SignatureOffset)
+	signatureOffset := int64(a.header.SignatureOffset())
 	signature := make([]byte, 256)
 	_, err = file.ReadAt(signature, signatureOffset)
 	if err != nil {
@@ -109,7 +110,7 @@ func (a *archive) checkFingerprint() (bool, error) {
 		return false, err
 	}
 
-	signatureOffset := int64(a.header.SignatureOffset)
+	signatureOffset := int64(a.header.SignatureOffset())
 
 	hasher := sha256.New()
 	buffer := make([]byte, 1024)
@@ -150,7 +151,8 @@ func (a *archive) checkFingerprint() (bool, error) {
 	}
 
 	checksum := hasher.Sum(nil)
-	return bytes.Equal(checksum, a.header.Checksum[:]), nil
+	expectedChecksum := a.header.Checksum()
+	return bytes.Equal(checksum, expectedChecksum[:]), nil
 }
 
 func deserialize(data []byte) (map[string]interface{}, error) {

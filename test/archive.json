@@ -1,12 +1,12 @@
 {
   "signatureMethod": "RSA-PRIVATE",
-  "signatureCertificate": "7708398af3d5726a3918120f62a589e89770f96a6fb83eff0612aa531c8395b8",
+  "signatureCertificate": "d4d951d7-fcd6-4936-b0a5-3e1f9c983167",
   "root": {
     "path": "/Users/noctarius/Desktop/empty/baseballdatabank-master",
     "type": "FOLDER",
     "compressionMethod": "GZIP",
     "encryptionMethod": "TWOFISH256",
-    "encryptionKey": "206bca26b1158ab1dfc7416e8016ad15",
+    "encryptionKey": "e932d7e1-bcf5-4aab-bd39-7f02c89394d7",
     "transitive": true,
     "excludes": [
       ".DS_Store"
@@ -17,7 +17,7 @@
         "path": "test/test.dat",
         "type": "FILE",
         "encryptionMethod": "TWOFISH256",
-        "encryptionKey": "206bca26b1158ab1dfc7416e8016ad15",
+        "encryptionKey": "e932d7e1-bcf5-4aab-bd39-7f02c89394d7",
         "compressionMethod": "BZIP2",
         "signatureMethod": "UNSIGNED",
         "metadata": [
@@ -40,8 +40,8 @@
             "name": "test.dat",
             "path": "test/test.dat",
             "type": "FILE",
-            "encryptionMethod": "TWOFISH256",
-            "encryptionKey": "206bca26b1158ab1dfc7416e8016ad15",
+            "encryptionMethod": "AES256",
+            "encryptionKey": "e932d7e1-bcf5-4aab-bd39-7f02c89394d7",
             "compressionMethod": "BZIP2",
             "signatureMethod": "UNSIGNED"
           }
