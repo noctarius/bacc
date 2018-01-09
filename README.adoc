@@ -217,6 +217,8 @@ The following table doesn't contain offset definitions as offsets depend on the 
 | 1 byte
 | The encryption method being used to encrypt this entry's content.
 
+  If an encryption with initialization vector (IV) is used (AES, Twofish), the first bytes of the actual files content is the IV. The IV length is equal to the blocksize of the encryption.
+
   *0x00*: unencrypted +
   *0x01*: AES-256 +
   *0x02*: Twofish-256 +
@@ -249,3 +251,4 @@ The following table doesn't contain offset definitions as offsets depend on the 
 
 |===
 
+If an entry is compressed and encrypted, the content is compressed before it is encrypted.

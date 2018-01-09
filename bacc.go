@@ -11,7 +11,7 @@ const (
 	BaseBytesizeFile64Header  = uint32(8 + 1 + 4 + 8 + 8 + 8 + 1 + 1 + 1 + 3)
 )
 
-type AsyncCallback func(result bool, err error)
+type CompletionCallback func(read uint64, processed uint64, result bool, err error)
 
 type ProgressCallback func(total uint64, processed uint64, progress float32)
 
@@ -128,7 +128,7 @@ type ArchiveHeader interface {
 	Metadata() map[string]interface{}
 	AddressingMode() AddressingMode
 	Verify(allowUnsigned bool) (bool, error)
-	//VerifyAsync(progress ProgressCallback, callback AsyncCallback, allowUnsigned bool)
+	//VerifyAsync(progress ProgressCallback, callback CompletionCallback, allowUnsigned bool)
 }
 
 type ArchiveEntry interface {
@@ -161,8 +161,8 @@ type ArchiveFile interface {
 	CompressionMethod() CompressionMethod
 	EncryptionMethod() EncryptionMethod
 	SignatureMethod() SignatureMethod
-	Verify(callback AsyncCallback)
-	Extract(progress ProgressCallback, callback AsyncCallback)
+	Verify(callback CompletionCallback)
+	Extract(progress ProgressCallback, callback CompletionCallback)
 	NewReader() io.Reader
 }
 
@@ -171,5 +171,5 @@ type Archive interface {
 	RootEntry() ArchiveFolder
 	ListLookupDirectory()
 	Verify(allowUnsigned bool) (bool, error)
-	//VerifyAsync(progress ProgressCallback, callback AsyncCallback, allowUnsigned bool)
+	//VerifyAsync(progress ProgressCallback, callback CompletionCallback, allowUnsigned bool)
 }
