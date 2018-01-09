@@ -4,7 +4,6 @@ import (
 	"os"
 	"encoding/json"
 	"io/ioutil"
-	"github.com/relations-one/bacc"
 	"path/filepath"
 	"github.com/go-errors/errors"
 	"github.com/zealic/xignore"
@@ -15,36 +14,36 @@ type JsonParser struct {
 	verbose bool
 }
 
-type Archive struct {
+type JsonArchive struct {
 	signatureConfig *signatureConfig
-	root            *Entry
+	root            *JsonEntry
 }
 
-type Entry struct {
+type JsonEntry struct {
 	name              string
-	entryType         bacc.EntryType
+	entryType         EntryType
 	pathString        string
 	path              *os.File
-	compressionMethod bacc.CompressionMethod
+	compressionMethod CompressionMethod
 	encryptionConfig  *encryptionConfig
 	signatureConfig   *signatureConfig
-	entries           []*Entry
+	entries           []*JsonEntry
 	ignoreMatcher     *xignore.IgnoreMatcher
 	metadata          map[string]interface{}
-	parent            *Entry
+	parent            *JsonEntry
 }
 
 func NewJsonParser(verbose bool) *JsonParser {
 	return &JsonParser{verbose}
 }
 
-func (e *Entry) String() string {
+func (e *JsonEntry) String() string {
 	return fmt.Sprintf("entry {name: %s, entryType: %s, path: %s, compressionMethod: %s, "+
 		"encryptionConfig: %s, signatureConfig: %s, metadata: %s, entries: %s}", e.name, e.entryType, e.pathString,
 		e.compressionMethod.String(), e.encryptionConfig, e.signatureConfig, e.metadata, e.entries)
 }
 
-func (e *Entry) fullPath() string {
+func (e *JsonEntry) fullPath() string {
 	path := e.name
 	parent := e.parent
 	for ; parent != nil; {
@@ -54,7 +53,7 @@ func (e *Entry) fullPath() string {
 	return path
 }
 
-func (jp *JsonParser) ReadJsonDescriptor(jsonDescriptor string) (*Archive, error) {
+func (jp *JsonParser) ReadJsonDescriptor(jsonDescriptor string) (*JsonArchive, error) {
 	descriptor, err := jp.unmarshallJsonDescriptor(jsonDescriptor)
 	if err != nil {
 		return nil, err
@@ -88,15 +87,15 @@ func (jp *JsonParser) unmarshallJsonDescriptor(jsonDescriptor string) (map[strin
 	return data.(map[string]interface{}), nil
 }
 
-func (jp *JsonParser) beginParseJsonDescriptor(descriptor map[string]interface{}) (*Archive, error) {
+func (jp *JsonParser) beginParseJsonDescriptor(descriptor map[string]interface{}) (*JsonArchive, error) {
 	encryptionConfig := &encryptionConfig{
-		encryptionMethod: bacc.ENCMET_UNENCRYPTED,
+		encryptionMethod: ENCMET_UNENCRYPTED,
 	}
 	signatureConfig := &signatureConfig{
-		signatureMethod: bacc.SIGMET_UNSINGED,
+		signatureMethod: SIGMET_UNSINGED,
 	}
 
-	archive := &Archive{
+	archive := &JsonArchive{
 		signatureConfig: signatureConfig,
 	}
 
@@ -110,7 +109,7 @@ func (jp *JsonParser) beginParseJsonDescriptor(descriptor map[string]interface{}
 	}
 
 	root, err := jp.parseJsonDescriptor(rootDescriptor.(map[string]interface{}),
-		bacc.COMPMET_UNCOMPRESSED, encryptionConfig, signatureConfig, nil)
+		COMPMET_UNCOMPRESSED, encryptionConfig, signatureConfig, nil)
 
 	if err != nil {
 		return nil, err
@@ -121,8 +120,8 @@ func (jp *JsonParser) beginParseJsonDescriptor(descriptor map[string]interface{}
 	return archive, nil
 }
 
-func (jp *JsonParser) parseJsonDescriptor(descriptor map[string]interface{}, compressionMethod bacc.CompressionMethod,
-	encryptionConfig *encryptionConfig, signatureConfig *signatureConfig, parent *Entry) (*Entry, error) {
+func (jp *JsonParser) parseJsonDescriptor(descriptor map[string]interface{}, compressionMethod CompressionMethod,
+	encryptionConfig *encryptionConfig, signatureConfig *signatureConfig, parent *JsonEntry) (*JsonEntry, error) {
 
 	t := descriptor["type"]
 	switch t {
@@ -137,13 +136,13 @@ func (jp *JsonParser) parseJsonDescriptor(descriptor map[string]interface{}, com
 	}
 }
 
-func (jp *JsonParser) parseFolder(descriptor map[string]interface{}, compressionMethod bacc.CompressionMethod,
-	encryptionConfig *encryptionConfig, signatureConfig *signatureConfig, parent *Entry) (*Entry, error) {
+func (jp *JsonParser) parseFolder(descriptor map[string]interface{}, compressionMethod CompressionMethod,
+	encryptionConfig *encryptionConfig, signatureConfig *signatureConfig, parent *JsonEntry) (*JsonEntry, error) {
 
-	entry := &Entry{
+	entry := &JsonEntry{
 		name:              jp.readString("name", "", descriptor),
-		entryType:         bacc.ENTRY_TYPE_FOLDER,
-		entries:           make([]*Entry, 0),
+		entryType:         ENTRY_TYPE_FOLDER,
+		entries:           make([]*JsonEntry, 0),
 		compressionMethod: compressionMethod,
 		encryptionConfig:  encryptionConfig,
 		signatureConfig:   signatureConfig,
@@ -241,8 +240,8 @@ func (jp *JsonParser) parseFolder(descriptor map[string]interface{}, compression
 
 	return entry, nil
 }
-func (jp *JsonParser) scanFolder(entry *Entry, folder *os.File, compressionMethod bacc.CompressionMethod,
-	encryptionConfig *encryptionConfig, signatureConfig *signatureConfig, parent *Entry) (error) {
+func (jp *JsonParser) scanFolder(entry *JsonEntry, folder *os.File, compressionMethod CompressionMethod,
+	encryptionConfig *encryptionConfig, signatureConfig *signatureConfig, parent *JsonEntry) (error) {
 
 	names, err := entry.path.Readdirnames(-1)
 	if err != nil {
@@ -288,7 +287,7 @@ func (jp *JsonParser) scanFolder(entry *Entry, folder *os.File, compressionMetho
 	return nil
 }
 
-func (jp *JsonParser) isIgnored(path string, entry *Entry) bool {
+func (jp *JsonParser) isIgnored(path string, entry *JsonEntry) bool {
 	parent := entry
 	var ignoreMatcher *xignore.IgnoreMatcher = nil
 	for {
@@ -309,18 +308,18 @@ func (jp *JsonParser) isIgnored(path string, entry *Entry) bool {
 	return matches
 }
 
-func (jp *JsonParser) createScannedFolder(folder *os.File, compressionMethod bacc.CompressionMethod,
-	encryptionConfig *encryptionConfig, signatureConfig *signatureConfig, parent *Entry) (*Entry, error) {
+func (jp *JsonParser) createScannedFolder(folder *os.File, compressionMethod CompressionMethod,
+	encryptionConfig *encryptionConfig, signatureConfig *signatureConfig, parent *JsonEntry) (*JsonEntry, error) {
 
 	path, err := filepath.Abs(filepath.Dir(folder.Name()))
 	if err != nil {
 		return nil, err
 	}
 
-	entry := &Entry{
+	entry := &JsonEntry{
 		name:              filepath.Base(folder.Name()),
-		entryType:         bacc.ENTRY_TYPE_FOLDER,
-		entries:           make([]*Entry, 0),
+		entryType:         ENTRY_TYPE_FOLDER,
+		entries:           make([]*JsonEntry, 0),
 		path:              folder,
 		pathString:        path,
 		compressionMethod: compressionMethod,
@@ -337,17 +336,17 @@ func (jp *JsonParser) createScannedFolder(folder *os.File, compressionMethod bac
 	return entry, nil
 }
 
-func (jp *JsonParser) createScannedFile(file *os.File, compressionMethod bacc.CompressionMethod,
-	encryptionConfig *encryptionConfig, signatureConfig *signatureConfig, parent *Entry) (*Entry, error) {
+func (jp *JsonParser) createScannedFile(file *os.File, compressionMethod CompressionMethod,
+	encryptionConfig *encryptionConfig, signatureConfig *signatureConfig, parent *JsonEntry) (*JsonEntry, error) {
 
 	path, err := filepath.Abs(file.Name())
 	if err != nil {
 		return nil, err
 	}
 
-	entry := &Entry{
+	entry := &JsonEntry{
 		name:              filepath.Base(file.Name()),
-		entryType:         bacc.ENTRY_TYPE_FILE,
+		entryType:         ENTRY_TYPE_FILE,
 		path:              file,
 		pathString:        path,
 		compressionMethod: compressionMethod,
@@ -364,12 +363,12 @@ func (jp *JsonParser) createScannedFile(file *os.File, compressionMethod bacc.Co
 	return entry, nil
 }
 
-func (jp *JsonParser) parseFile(descriptor map[string]interface{}, compressionMethod bacc.CompressionMethod,
-	encryptionConfig *encryptionConfig, signatureConfig *signatureConfig, parent *Entry) (*Entry, error) {
+func (jp *JsonParser) parseFile(descriptor map[string]interface{}, compressionMethod CompressionMethod,
+	encryptionConfig *encryptionConfig, signatureConfig *signatureConfig, parent *JsonEntry) (*JsonEntry, error) {
 
-	entry := &Entry{
+	entry := &JsonEntry{
 		name:              jp.readString("name", "", descriptor),
-		entryType:         bacc.ENTRY_TYPE_FILE,
+		entryType:         ENTRY_TYPE_FILE,
 		compressionMethod: compressionMethod,
 		encryptionConfig:  encryptionConfig,
 		signatureConfig:   signatureConfig,
@@ -449,17 +448,17 @@ func (jp *JsonParser) readBoolean(attribute string, defaultValue bool, descripto
 	return defaultValue
 }
 
-func (jp *JsonParser) readCompressionMethod(descriptor map[string]interface{}) bacc.CompressionMethod {
+func (jp *JsonParser) readCompressionMethod(descriptor map[string]interface{}) CompressionMethod {
 	compressionMethod := jp.readString("compressionMethod", "UNCOMPRESSED", descriptor)
 	switch compressionMethod {
 	case "UNCOMPRESSED":
-		return bacc.COMPMET_UNCOMPRESSED
+		return COMPMET_UNCOMPRESSED
 
 	case "GZIP":
-		return bacc.COMPMET_GZIP
+		return COMPMET_GZIP
 
 	case "BZIP2":
-		return bacc.COMPMET_BZIP2
+		return COMPMET_BZIP2
 
 	default:
 		panic(errors.New("illegal compression method selected"))
@@ -474,36 +473,36 @@ func (jp *JsonParser) readEncryptionConfig(descriptor map[string]interface{}) *e
 	config := &encryptionConfig{}
 	switch encryptionMethod {
 	case "UNENCRYPTED":
-		config.encryptionMethod = bacc.ENCMET_UNENCRYPTED
+		config.encryptionMethod = ENCMET_UNENCRYPTED
 
 	case "AES256":
-		config.encryptionMethod = bacc.ENCMET_AES256
+		config.encryptionMethod = ENCMET_AES256
 		config.encryptionKey = encryptionKey
 
 	case "TWOFISH256":
-		config.encryptionMethod = bacc.ENCMET_TWOFISH256
+		config.encryptionMethod = ENCMET_TWOFISH256
 		config.encryptionKey = encryptionKey
 
 	case "RSA-PRIVATE":
-		config.encryptionMethod = bacc.ENCMET_RSA_PRIVATE
+		config.encryptionMethod = ENCMET_RSA_PRIVATE
 		config.encryptionCertificate = encryptionCertificate
 
 	case "RSA-PUBLIC":
-		config.encryptionMethod = bacc.ENCMET_RSA_PRIVATE
+		config.encryptionMethod = ENCMET_RSA_PRIVATE
 		config.encryptionCertificate = encryptionCertificate
 
 	default:
 		panic(errors.New("illegal encryption method selected"))
 	}
 
-	if (config.encryptionMethod == bacc.ENCMET_AES256 ||
-		config.encryptionMethod == bacc.ENCMET_TWOFISH256) && config.encryptionKey == "" {
+	if (config.encryptionMethod == ENCMET_AES256 ||
+		config.encryptionMethod == ENCMET_TWOFISH256) && config.encryptionKey == "" {
 
 		panic(errors.New("missing key on encryption configuration"))
 	}
 
-	if (config.encryptionMethod == bacc.ENCMET_RSA_PRIVATE ||
-		config.encryptionMethod == bacc.ENCMET_RSA_PUBLIC) && config.encryptionCertificate == "" {
+	if (config.encryptionMethod == ENCMET_RSA_PRIVATE ||
+		config.encryptionMethod == ENCMET_RSA_PUBLIC) && config.encryptionCertificate == "" {
 
 		panic(errors.New("missing key on encryption configuration"))
 	}
@@ -518,17 +517,17 @@ func (jp *JsonParser) readSignatureConfig(descriptor map[string]interface{}) *si
 	config := &signatureConfig{}
 	switch signatureMethod {
 	case "UNSIGNED":
-		config.signatureMethod = bacc.SIGMET_UNSINGED
+		config.signatureMethod = SIGMET_UNSINGED
 
 	case "RSA-PRIVATE":
-		config.signatureMethod = bacc.SIGMET_RSA_PRIVATE
+		config.signatureMethod = SIGMET_RSA_PRIVATE
 		config.signatureCertificate = signatureCertificate
 
 	default:
 		panic(errors.New("illegal signature method selected"))
 	}
 
-	if config.signatureMethod == bacc.SIGMET_RSA_PRIVATE && config.signatureCertificate == "" {
+	if config.signatureMethod == SIGMET_RSA_PRIVATE && config.signatureCertificate == "" {
 		panic(errors.New("missing key on encryption configuration"))
 	}
 

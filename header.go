@@ -1,7 +1,6 @@
 package bacc
 
 import (
-	"github.com/relations-one/bacc"
 	"crypto/rsa"
 	"os"
 	"crypto/sha256"
@@ -24,13 +23,13 @@ type archiveHeaderWriter struct {
 	checksum               [32]byte
 	headerSize             uint32
 	signatureOffset        uint64
-	signatureMethod        bacc.SignatureMethod
+	signatureMethod        SignatureMethod
 	certificateFingerprint string
 	metadataSize           uint32
 	metadata               []byte
 }
 
-func createHeader(archive *Archive, addressingMode bacc.AddressingMode,
+func createHeader(archive *JsonArchive, addressingMode AddressingMode,
 	metadata map[string]interface{}) (*archiveHeaderWriter, error) {
 
 	var metadataData []byte = nil
@@ -43,19 +42,19 @@ func createHeader(archive *Archive, addressingMode bacc.AddressingMode,
 	}
 
 	bitflag := uint8(0)
-	if addressingMode == bacc.ADDRESSING_64BIT {
+	if addressingMode == ADDRESSING_64BIT {
 		bitflag |= 1 << 7
 	}
 
 	return &archiveHeaderWriter{
-		magicHeader:            bacc.MagicHeader,
+		magicHeader:            MagicHeader,
 		version:                0x01,
 		bitflag:                bitflag,
 		signatureMethod:        archive.signatureConfig.signatureMethod,
 		certificateFingerprint: archive.signatureConfig.signatureCertificate,
 		metadataSize:           uint32(len(metadataData)),
 		metadata:               metadataData,
-		headerSize:             bacc.BaseBytesizeArchiveHeader + uint32(len(metadataData)),
+		headerSize:             BaseBytesizeArchiveHeader + uint32(len(metadataData)),
 	}, nil
 }
 
@@ -114,7 +113,7 @@ type archiveHeader struct {
 	checksum               [32]byte
 	headerSize             uint32
 	signatureOffset        uint64
-	signatureMethod        bacc.SignatureMethod
+	signatureMethod        SignatureMethod
 	certificateFingerprint string
 	metadata               map[string]interface{}
 }
@@ -143,7 +142,7 @@ func (header *archiveHeader) SignatureOffset() uint64 {
 	return header.signatureOffset
 }
 
-func (header *archiveHeader) SignatureMethod() bacc.SignatureMethod {
+func (header *archiveHeader) SignatureMethod() SignatureMethod {
 	return header.signatureMethod
 }
 
@@ -160,22 +159,22 @@ func (header *archiveHeader) Verify(allowUnsigned bool) (bool, error) {
 	return true, nil
 }
 
-func (header *archiveHeader) AddressingMode() bacc.AddressingMode {
-	return bacc.AddressingMode((header.bitflag >> 7) & 1)
+func (header *archiveHeader) AddressingMode() AddressingMode {
+	return AddressingMode((header.bitflag >> 7) & 1)
 }
 
 type readerArchive struct {
-	header      bacc.ArchiveHeader
-	rootEntry   bacc.ArchiveFolder
+	header      ArchiveHeader
+	rootEntry   ArchiveFolder
 	reader      *readerBuffer
 	archivePath string
 }
 
-func (a *readerArchive) Header() bacc.ArchiveHeader {
+func (a *readerArchive) Header() ArchiveHeader {
 	return a.header
 }
 
-func (a *readerArchive) RootEntry() bacc.ArchiveFolder {
+func (a *readerArchive) RootEntry() ArchiveFolder {
 	return a.rootEntry
 }
 
@@ -192,22 +191,22 @@ func (a *readerArchive) Verify(allowUnsigned bool) (bool, error) {
 		return success, nil
 	}
 
-	if a.header.SignatureMethod() == bacc.SIGMET_UNSINGED && !allowUnsigned {
+	if a.header.SignatureMethod() == SIGMET_UNSINGED && !allowUnsigned {
 		return false, errors.New("unsigned archives are not allowed")
 	}
 
 	return a.checkSignature()
 }
 
-func (a *readerArchive) printEntry(entry bacc.ArchiveEntry, indentation int, lastItem bool) {
+func (a *readerArchive) printEntry(entry ArchiveEntry, indentation int, lastItem bool) {
 	for i := 0; i < indentation; i++ {
 		fmt.Print("│ ")
 	}
 	switch e := entry.(type) {
-	case bacc.ArchiveFolder:
+	case ArchiveFolder:
 		fmt.Println("├ " + entry.Name())
 
-	case bacc.ArchiveFile:
+	case ArchiveFile:
 		var compressionRatio = float64(100)
 		if e.UncompressedSize() > 0 {
 			compressionRatio = float64(e.CompressedSize()) * 100.0 / float64(e.UncompressedSize())
@@ -223,7 +222,7 @@ func (a *readerArchive) printEntry(entry bacc.ArchiveEntry, indentation int, las
 	}
 
 	switch e := entry.(type) {
-	case bacc.ArchiveFolder:
+	case ArchiveFolder:
 		for i, child := range e.Entries() {
 			a.printEntry(child, indentation+1, uint32(i) == e.EntryCount()-1)
 		}
@@ -231,7 +230,7 @@ func (a *readerArchive) printEntry(entry bacc.ArchiveEntry, indentation int, las
 }
 
 func (a *readerArchive) checkSignature() (bool, error) {
-	key, err := bacc.LoadKeyForVerifying("test/public.pem")
+	key, err := LoadKeyForVerifying("test/public.pem")
 	if err != nil {
 		return false, err
 	}

@@ -2,7 +2,7 @@ package main
 
 import (
 	"flag"
-	"github.com/relations-one/bacc/writer"
+	"github.com/relations-one/bacc"
 	"os"
 	"fmt"
 )
@@ -26,13 +26,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	parser := writer.NewJsonParser(*verbose)
+	parser := bacc.NewJsonParser(*verbose)
 	jsonDescriptor, err := parser.ReadJsonDescriptor(*descriptor)
 	if err != nil {
 		panic(err)
 	}
 
-	packager := writer.NewPackager(*verbose)
+	packager := bacc.NewPackager(nil, *verbose)
 	err = packager.WriteArchive(*out, jsonDescriptor, *force64bit)
 	if err != nil {
 		panic(err)

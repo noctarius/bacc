@@ -83,7 +83,7 @@ func parsePublicKey(data []byte) (Verifier, error) {
 }
 
 func (rpk *rsaPrivateKey) Sign(reader io.ReaderAt, signatureOffset int64) ([]byte, error) {
-	hash, err := generateHash(reader, signatureOffset, func() hash.Hash { return sha512.New() })
+	hash, err := generateSigningHash(reader, signatureOffset, func() hash.Hash { return sha512.New() })
 	if err != nil {
 		return nil, err
 	}
@@ -91,14 +91,14 @@ func (rpk *rsaPrivateKey) Sign(reader io.ReaderAt, signatureOffset int64) ([]byt
 }
 
 func (rpk *rsaPublicKey) Verify(reader io.ReaderAt, signatureOffset int64, signature []byte) error {
-	hash, err := generateHash(reader, signatureOffset, func() hash.Hash { return sha512.New() })
+	hash, err := generateSigningHash(reader, signatureOffset, func() hash.Hash { return sha512.New() })
 	if err != nil {
 		return err
 	}
 	return rsa.VerifyPKCS1v15(rpk.PublicKey, crypto.SHA512, hash, signature)
 }
 
-func generateHash(reader io.ReaderAt, signatureOffset int64, hasherFactory func() hash.Hash) ([]byte, error) {
+func generateSigningHash(reader io.ReaderAt, signatureOffset int64, hasherFactory func() hash.Hash) ([]byte, error) {
 	hasher := hasherFactory()
 	buffer := make([]byte, 1024)
 

@@ -3,21 +3,19 @@ package bacc
 import (
 	"github.com/ugorji/go/codec"
 	"bytes"
-	"github.com/relations-one/bacc"
 	"io"
-	"hash"
 	"reflect"
 	"github.com/go-errors/errors"
 )
 
 type encryptionConfig struct {
-	encryptionMethod      bacc.EncryptionMethod
+	encryptionMethod      EncryptionMethod
 	encryptionKey         string
 	encryptionCertificate string
 }
 
 type signatureConfig struct {
-	signatureMethod      bacc.SignatureMethod
+	signatureMethod      SignatureMethod
 	signatureCertificate string
 }
 
@@ -42,28 +40,6 @@ func min(x, y int64) int64 {
 		return x
 	}
 	return y
-}
-
-func generateHash(reader io.ReaderAt, hasherFactory func() hash.Hash) ([]byte, error) {
-	hasher := hasherFactory()
-	buffer := make([]byte, 1024)
-
-	offset := int64(0)
-	for ; ; {
-		bytes, err := reader.ReadAt(buffer, offset)
-		if err != nil && err != io.EOF {
-			return nil, err
-		}
-
-		hasher.Write(buffer[:bytes])
-		offset += int64(bytes)
-
-		if err == io.EOF {
-			break
-		}
-	}
-
-	return hasher.Sum(nil), nil
 }
 
 func deserialize(data []byte) (map[string]interface{}, error) {
@@ -103,12 +79,12 @@ func mapping(deserialized map[interface{}]interface{}) (map[string]interface{}, 
 	return fixed, nil
 }
 
-func calculateBytesize(entry bacc.ArchiveEntry) int64 {
-	if entry.EntryType() == bacc.ENTRY_TYPE_FILE {
+func calculateBytesize(entry ArchiveEntry) int64 {
+	if entry.EntryType() == ENTRY_TYPE_FILE {
 		return int64(entry.HeaderSize())
 	}
 
-	folder := entry.(bacc.ArchiveFolder)
+	folder := entry.(ArchiveFolder)
 
 	headerSize := int64(entry.HeaderSize())
 	for _, child := range folder.Entries() {

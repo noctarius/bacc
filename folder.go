@@ -2,7 +2,6 @@ package bacc
 
 import (
 	"os"
-	"github.com/relations-one/bacc"
 	"errors"
 	"fmt"
 )
@@ -41,7 +40,7 @@ func (afw *archiveFolderWriter) write(writer *writeBuffer) error {
 	if _, err := writer.writeUint64(afw.timestamp); err != nil {
 		return err
 	}
-	if _, err := writer.writeUint8(uint8(bacc.ENTRY_TYPE_FOLDER)); err != nil {
+	if _, err := writer.writeUint8(uint8(ENTRY_TYPE_FOLDER)); err != nil {
 		return err
 	}
 	if _, err := writer.writeUint32(afw.headerSize); err != nil {
@@ -70,15 +69,15 @@ type folderEntry struct {
 	headerSize uint32
 	entryCount uint32
 	metadata   map[string]interface{}
-	entries    []bacc.ArchiveEntry
+	entries    []ArchiveEntry
 }
 
 func (fe *folderEntry) HeaderSize() uint32 {
 	return fe.headerSize
 }
 
-func (fe *folderEntry) EntryType() bacc.EntryType {
-	return bacc.ENTRY_TYPE_FOLDER
+func (fe *folderEntry) EntryType() EntryType {
+	return ENTRY_TYPE_FOLDER
 }
 
 func (fe *folderEntry) Name() string {
@@ -97,6 +96,6 @@ func (fe *folderEntry) Metadata() map[string]interface{} {
 	return fe.metadata
 }
 
-func (fe *folderEntry) Entries() []bacc.ArchiveEntry {
+func (fe *folderEntry) Entries() []ArchiveEntry {
 	return fe.entries
 }

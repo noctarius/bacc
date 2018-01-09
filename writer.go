@@ -6,7 +6,6 @@ import (
 	"io"
 	"compress/gzip"
 	"crypto/sha256"
-	"github.com/relations-one/bacc"
 	"time"
 	"strings"
 	"fmt"
@@ -15,16 +14,16 @@ import (
 )
 
 type Packager struct {
-	keyManager     bacc.KeyManager
+	keyManager     KeyManager
 	verbose        bool
-	addressingMode bacc.AddressingMode
+	addressingMode AddressingMode
 }
 
-func NewPackager(keyManager bacc.KeyManager, verbose bool) *Packager {
-	return &Packager{keyManager, verbose, bacc.ADDRESSING_64BIT}
+func NewPackager(keyManager KeyManager, verbose bool) *Packager {
+	return &Packager{keyManager, verbose, ADDRESSING_64BIT}
 }
 
-func (p *Packager) WriteArchive(archivePath string, archiveDefinition *Archive, force64bit bool) error {
+func (p *Packager) WriteArchive(archivePath string, archiveDefinition *JsonArchive, force64bit bool) error {
 	root := archiveDefinition.root
 	if !force64bit {
 		val, err := p.is64bitNecessary(root)
@@ -81,12 +80,12 @@ func (p *Packager) WriteArchive(archivePath string, archiveDefinition *Archive, 
 	return nil
 }
 
-func (p *Packager) buildArchiveEntryHeader(entry *Entry, offset int64) (archiveWritable, int64, error) {
+func (p *Packager) buildArchiveEntryHeader(entry *JsonEntry, offset int64) (archiveWritable, int64, error) {
 	switch entry.entryType {
-	case bacc.ENTRY_TYPE_FOLDER:
+	case ENTRY_TYPE_FOLDER:
 		return p.createFolder(entry, offset)
 
-	case bacc.ENTRY_TYPE_FILE:
+	case ENTRY_TYPE_FILE:
 		return p.createFile(entry, offset)
 
 	default:
@@ -94,7 +93,7 @@ func (p *Packager) buildArchiveEntryHeader(entry *Entry, offset int64) (archiveW
 	}
 }
 
-func (p *Packager) createFolder(entry *Entry, offset int64) (*archiveFolderWriter, int64, error) {
+func (p *Packager) createFolder(entry *JsonEntry, offset int64) (*archiveFolderWriter, int64, error) {
 	timestamp := uint64(time.Now().UnixNano())
 
 	if entry.path != nil {
@@ -105,7 +104,7 @@ func (p *Packager) createFolder(entry *Entry, offset int64) (*archiveFolderWrite
 		timestamp = uint64(stat.ModTime().UnixNano())
 	}
 
-	headerSize := bacc.BaseBytesizeFolderHeader + uint32(len([]byte(entry.name))) + 1
+	headerSize := BaseBytesizeFolderHeader + uint32(len([]byte(entry.name))) + 1
 
 	metadataSize := uint32(0)
 	var metadataBytes []byte
@@ -146,7 +145,7 @@ func (p *Packager) createFolder(entry *Entry, offset int64) (*archiveFolderWrite
 	return folder, offset, nil
 }
 
-func (p *Packager) createFile(entry *Entry, offset int64) (*archiveFileWriter, int64, error) {
+func (p *Packager) createFile(entry *JsonEntry, offset int64) (*archiveFileWriter, int64, error) {
 	stat, err := entry.path.Stat()
 	if err != nil {
 		return nil, -1, err
@@ -154,10 +153,10 @@ func (p *Packager) createFile(entry *Entry, offset int64) (*archiveFileWriter, i
 	timestamp := uint64(stat.ModTime().UnixNano())
 
 	var headerSize uint32
-	if p.addressingMode == bacc.ADDRESSING_64BIT {
-		headerSize = bacc.BaseBytesizeFile64Header
+	if p.addressingMode == ADDRESSING_64BIT {
+		headerSize = BaseBytesizeFile64Header
 	} else {
-		headerSize = bacc.BaseBytesizeFile32Header
+		headerSize = BaseBytesizeFile32Header
 	}
 	headerSize += uint32(len([]byte(entry.name))) + 1
 
@@ -173,11 +172,11 @@ func (p *Packager) createFile(entry *Entry, offset int64) (*archiveFileWriter, i
 		headerSize += uint32(len(metadataBytes))
 	}
 
-	if entry.encryptionConfig.encryptionMethod != bacc.ENCMET_UNENCRYPTED {
+	if entry.encryptionConfig.encryptionMethod != ENCMET_UNENCRYPTED {
 		headerSize += 32
 	}
 
-	if entry.signatureConfig.signatureMethod != bacc.SIGMET_UNSINGED {
+	if entry.signatureConfig.signatureMethod != SIGMET_UNSINGED {
 		headerSize += 32 + 256
 	}
 
@@ -185,10 +184,10 @@ func (p *Packager) createFile(entry *Entry, offset int64) (*archiveFileWriter, i
 
 	fingerprint := ""
 	encryptionMethod := entry.encryptionConfig.encryptionMethod
-	if encryptionMethod == bacc.ENCMET_AES256 || encryptionMethod == bacc.ENCMET_TWOFISH256 {
+	if encryptionMethod == ENCMET_AES256 || encryptionMethod == ENCMET_TWOFISH256 {
 		fingerprint = entry.encryptionConfig.encryptionKey
 
-	} else if encryptionMethod == bacc.ENCMET_RSA_PRIVATE || encryptionMethod == bacc.ENCMET_RSA_PUBLIC {
+	} else if encryptionMethod == ENCMET_RSA_PRIVATE || encryptionMethod == ENCMET_RSA_PUBLIC {
 		fingerprint = entry.encryptionConfig.encryptionCertificate
 	}
 
@@ -237,35 +236,35 @@ func (p *Packager) serializeFingerprint(fingerprint string) ([]byte, error) {
 	return []byte(fingerprint), nil
 }
 
-func (p *Packager) is64bitNecessary(entry *Entry) (bacc.AddressingMode, error) {
+func (p *Packager) is64bitNecessary(entry *JsonEntry) (AddressingMode, error) {
 	switch entry.entryType {
-	case bacc.ENTRY_TYPE_FOLDER:
+	case ENTRY_TYPE_FOLDER:
 		if entry.entries != nil {
 			for _, child := range entry.entries {
 				addressingMode, err := p.is64bitNecessary(child)
 				if err != nil {
 					return 0, err
 				}
-				if addressingMode == bacc.ADDRESSING_64BIT {
+				if addressingMode == ADDRESSING_64BIT {
 					return addressingMode, nil
 				}
 			}
 		}
 
-	case bacc.ENTRY_TYPE_FILE:
+	case ENTRY_TYPE_FILE:
 		stat, err := entry.path.Stat()
 		if err != nil {
 			return 0, err
 		}
 		if stat.Size() > 4294967295 {
-			return bacc.ADDRESSING_64BIT, nil
+			return ADDRESSING_64BIT, nil
 		}
 
 	default:
 		return 0, errors.New("illegal entry type found")
 	}
 
-	return bacc.ADDRESSING_32BIT, nil
+	return ADDRESSING_32BIT, nil
 }
 
 func walkFolderAndWriteHeader(folder *archiveFolderWriter, writer *writeBuffer) error {
@@ -317,13 +316,13 @@ func (p *Packager) walkFolderAndWriteContent(folder *archiveFolderWriter,
 }
 
 func (p *Packager) pushFileContent(writer *writeBuffer, source *archiveFileWriter) (int64, error) {
-	var progress bacc.ProgressCallback = func(total uint64, processed uint64, progress float32) {
+	var progress ProgressCallback = func(total uint64, processed uint64, progress float32) {
 		fmt.Print(".")
 	}
 
 	compressionMethod := source.compressionMethod
-	var callback bacc.CompletionCallback = func(read uint64, processed uint64, result bool, err error) {
-		if p.verbose && compressionMethod != bacc.COMPMET_UNCOMPRESSED {
+	var callback CompletionCallback = func(read uint64, processed uint64, result bool, err error) {
+		if p.verbose && compressionMethod != COMPMET_UNCOMPRESSED {
 			fmt.Println(fmt.Sprintf(" 100%% - Compressed from %d to %d => %.2f %%",
 				read, processed, float64(processed)*100./float64(read)))
 		} else {
@@ -336,7 +335,7 @@ func (p *Packager) pushFileContent(writer *writeBuffer, source *archiveFileWrite
 }
 
 func (p *Packager) copyCompressAndEncryptFileContent(writer *writeBuffer, source *archiveFileWriter,
-	progress bacc.ProgressCallback, callback bacc.CompletionCallback) (int64, error) {
+	progress ProgressCallback, callback CompletionCallback) (int64, error) {
 
 	// Mark the current offset for size calculation
 	writer.mark()
@@ -370,7 +369,7 @@ func (p *Packager) copyCompressAndEncryptFileContent(writer *writeBuffer, source
 }
 
 func (p *Packager) copySourceToSink(reader io.ReaderAt, writer io.Writer, size int64,
-	progress bacc.ProgressCallback, callback bacc.CompletionCallback) (int64, error) {
+	progress ProgressCallback, callback CompletionCallback) (int64, error) {
 
 	sourceOffset := int64(0)
 	buffer := make([]byte, 1024*1024)
@@ -402,13 +401,13 @@ func (p *Packager) createOutputWriter(writer *writeBuffer, source *archiveFileWr
 	}
 
 	switch source.compressionMethod {
-	case bacc.COMPMET_GZIP:
+	case COMPMET_GZIP:
 		wt, err := gzip.NewWriterLevel(w, gzip.BestCompression)
 		if err != nil {
 			return nil, err
 		}
 		w = wt
-	case bacc.COMPMET_BZIP2:
+	case COMPMET_BZIP2:
 		wt, err := gobzip.NewBzipWriter(w)
 		if err != nil {
 			return nil, err
@@ -472,7 +471,7 @@ func signArchive(archivePath string, signatureOffset int64, keyPath string) erro
 		return err
 	}
 
-	signer, err := bacc.LoadKeyForSigning(keyPath)
+	signer, err := LoadKeyForSigning(keyPath)
 	if err != nil {
 		return err
 	}

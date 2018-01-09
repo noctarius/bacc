@@ -2,8 +2,7 @@ package main
 
 import (
 	"fmt"
-	reader2 "github.com/relations-one/bacc/reader"
-	"github.com/relations-one/bacc/writer"
+	"github.com/relations-one/bacc"
 )
 
 func main() {
@@ -24,18 +23,18 @@ func main() {
 
 	keyManager := &keyManagerImpl{}
 
-	parser := writer.NewJsonParser(true)
+	parser := bacc.NewJsonParser(true)
 	archiveDefinition, err := parser.ReadJsonDescriptor("./test/archive.json")
 	if err != nil {
 		panic(err)
 	}
 
-	packager := writer.NewPackager(keyManager, true)
+	packager := bacc.NewPackager(keyManager, true)
 	if err := packager.WriteArchive("archive.bacc", archiveDefinition, false); err != nil {
 		panic(err)
 	}
 
-	reader := reader2.NewReader(keyManager)
+	reader := bacc.NewReader(keyManager)
 	archive, err := reader.ReadArchive("archive.bacc")
 	if err != nil {
 		panic(err)

@@ -4,19 +4,18 @@ import (
 	"os"
 	"github.com/go-errors/errors"
 	"encoding/hex"
-	"github.com/relations-one/bacc"
 )
 
 type Reader struct {
-	keyManager     bacc.KeyManager
-	addressingMode bacc.AddressingMode
+	keyManager     KeyManager
+	addressingMode AddressingMode
 }
 
-func NewReader(keyManager bacc.KeyManager) *Reader {
+func NewReader(keyManager KeyManager) *Reader {
 	return &Reader{keyManager: keyManager}
 }
 
-func (r *Reader) ReadArchive(archivePath string) (bacc.Archive, error) {
+func (r *Reader) ReadArchive(archivePath string) (Archive, error) {
 	reader, err := r.createReader(archivePath)
 	if err != nil {
 		return nil, err
@@ -34,7 +33,7 @@ func (r *Reader) ReadArchive(archivePath string) (bacc.Archive, error) {
 		reader:      reader,
 		header:      header,
 		archivePath: archivePath,
-		rootEntry:   rootEntry.(bacc.ArchiveFolder),
+		rootEntry:   rootEntry.(ArchiveFolder),
 	}
 
 	return archive, nil
@@ -51,7 +50,7 @@ func (r *Reader) readHeader(reader *readerBuffer) (*archiveHeader, error) {
 	if err != nil {
 		return nil, err
 	}
-	if magic != bacc.MagicHeader {
+	if magic != MagicHeader {
 		return nil, errors.New("illegal archive file, magic header doesn't match")
 	}
 	offset += 2
@@ -103,7 +102,7 @@ func (r *Reader) readHeader(reader *readerBuffer) (*archiveHeader, error) {
 	}
 	offset += 1
 
-	header.signatureMethod = bacc.SignatureMethod(signatureMethod)
+	header.signatureMethod = SignatureMethod(signatureMethod)
 
 	fingerprint := make([]byte, 32)
 	if err := reader.readBuffer(fingerprint, offset); err != nil {
@@ -143,7 +142,7 @@ func (r *Reader) readMetadata(reader *readerBuffer, offset int64) (map[string]in
 	return table, nil
 }
 
-func (r *Reader) readEntry(reader *readerBuffer, offset int64) (bacc.ArchiveEntry, error) {
+func (r *Reader) readEntry(reader *readerBuffer, offset int64) (ArchiveEntry, error) {
 	buf := make([]byte, 0)
 
 	roffset := offset
@@ -182,8 +181,8 @@ func (r *Reader) readEntry(reader *readerBuffer, offset int64) (bacc.ArchiveEntr
 	}
 	roffset += 4
 
-	switch bacc.EntryType(entryType) {
-	case bacc.ENTRY_TYPE_FOLDER:
+	switch EntryType(entryType) {
+	case ENTRY_TYPE_FOLDER:
 		return r.readFolder(reader, roffset, name, timestamp, headerSize)
 	default:
 		return r.readFile(reader, roffset, name, timestamp, headerSize)
@@ -205,7 +204,7 @@ func (r *Reader) readFolder(reader *readerBuffer, offset int64, name string,
 		headerSize: headerSize,
 		entryCount: entryCount,
 		metadata:   make(map[string]interface{}),
-		entries:    make([]bacc.ArchiveEntry, entryCount),
+		entries:    make([]ArchiveEntry, entryCount),
 	}
 
 	metadataSize, err := reader.readUint24(offset)
@@ -237,7 +236,7 @@ func (r *Reader) readFile(reader *readerBuffer, offset int64, name string,
 	timestamp uint64, headerSize uint32) (*fileEntry, error) {
 
 	var compressedSize, uncompressedSize, contentOffset uint64
-	if r.addressingMode == bacc.ADDRESSING_64BIT {
+	if r.addressingMode == ADDRESSING_64BIT {
 		cs, err := reader.readUint64(offset)
 		if err != nil {
 			return nil, err
@@ -295,7 +294,7 @@ func (r *Reader) readFile(reader *readerBuffer, offset int64, name string,
 	offset++
 
 	keyFingerprint := ""
-	if bacc.EncryptionMethod(encryptionMethod) != bacc.ENCMET_UNENCRYPTED {
+	if EncryptionMethod(encryptionMethod) != ENCMET_UNENCRYPTED {
 		fingerprint := make([]byte, 32)
 		if err := reader.readBuffer(fingerprint, offset); err != nil {
 			return nil, err
@@ -311,7 +310,7 @@ func (r *Reader) readFile(reader *readerBuffer, offset int64, name string,
 	offset++
 
 	certificateFingerprint := ""
-	if bacc.SignatureMethod(signatureMethod) != bacc.SIGMET_UNSINGED {
+	if SignatureMethod(signatureMethod) != SIGMET_UNSINGED {
 		fingerprint := make([]byte, 32)
 		if err := reader.readBuffer(fingerprint, offset); err != nil {
 			return nil, err
@@ -327,10 +326,10 @@ func (r *Reader) readFile(reader *readerBuffer, offset int64, name string,
 		compressedSize:         compressedSize,
 		uncompressedSize:       uncompressedSize,
 		contentOffset:          contentOffset,
-		compressionMethod:      bacc.CompressionMethod(compressionMethod),
-		encryptionMethod:       bacc.EncryptionMethod(encryptionMethod),
+		compressionMethod:      CompressionMethod(compressionMethod),
+		encryptionMethod:       EncryptionMethod(encryptionMethod),
 		keyFingerprint:         keyFingerprint,
-		signatureMethod:        bacc.SignatureMethod(signatureMethod),
+		signatureMethod:        SignatureMethod(signatureMethod),
 		certificateFingerprint: certificateFingerprint,
 		metadata:               make(map[string]interface{}),
 	}

@@ -2,13 +2,12 @@ package bacc
 
 import (
 	"os"
-	"github.com/relations-one/bacc"
 	"fmt"
 	"io"
 )
 
 type archiveFileWriter struct {
-	addressingMode         bacc.AddressingMode
+	addressingMode         AddressingMode
 	name                   string
 	timestamp              uint64
 	headerSize             uint32
@@ -16,11 +15,11 @@ type archiveFileWriter struct {
 	compressedSize         uint64
 	uncompressedSize       uint64
 	contentOffset          uint64
-	compressionMethod      bacc.CompressionMethod
-	encryptionMethod       bacc.EncryptionMethod
+	compressionMethod      CompressionMethod
+	encryptionMethod       EncryptionMethod
 	key                    []byte
 	keyFingerprint         []byte
-	signatureMethod        bacc.SignatureMethod
+	signatureMethod        SignatureMethod
 	certificateFingerprint []byte
 	signature              []byte // always 256 bytes
 	metadataSize           uint32
@@ -36,13 +35,13 @@ func (afw *archiveFileWriter) write(writer *writeBuffer) error {
 	if _, err := writer.writeUint64(afw.timestamp); err != nil {
 		return err
 	}
-	if _, err := writer.writeUint8(uint8(bacc.ENTRY_TYPE_FILE)); err != nil {
+	if _, err := writer.writeUint8(uint8(ENTRY_TYPE_FILE)); err != nil {
 		return err
 	}
 	if _, err := writer.writeUint32(afw.headerSize); err != nil {
 		return err
 	}
-	if afw.addressingMode == bacc.ADDRESSING_64BIT {
+	if afw.addressingMode == ADDRESSING_64BIT {
 		if _, err := writer.writeUint64(afw.compressedSize); err != nil {
 			return err
 		}
@@ -69,7 +68,7 @@ func (afw *archiveFileWriter) write(writer *writeBuffer) error {
 	if _, err := writer.writeUint8(uint8(afw.encryptionMethod)); err != nil {
 		return err
 	}
-	if afw.encryptionMethod != bacc.ENCMET_UNENCRYPTED {
+	if afw.encryptionMethod != ENCMET_UNENCRYPTED {
 		if _, err := writer.Write(afw.keyFingerprint); err != nil {
 			return err
 		}
@@ -77,7 +76,7 @@ func (afw *archiveFileWriter) write(writer *writeBuffer) error {
 	if _, err := writer.writeUint8(uint8(afw.signatureMethod)); err != nil {
 		return err
 	}
-	if afw.signatureMethod != bacc.SIGMET_UNSINGED {
+	if afw.signatureMethod != SIGMET_UNSINGED {
 		if _, err := writer.Write(afw.certificateFingerprint); err != nil {
 			return err
 		}
@@ -107,10 +106,10 @@ type fileEntry struct {
 	compressedSize         uint64
 	uncompressedSize       uint64
 	contentOffset          uint64
-	compressionMethod      bacc.CompressionMethod
-	encryptionMethod       bacc.EncryptionMethod
+	compressionMethod      CompressionMethod
+	encryptionMethod       EncryptionMethod
 	keyFingerprint         string
-	signatureMethod        bacc.SignatureMethod
+	signatureMethod        SignatureMethod
 	certificateFingerprint string
 	metadata               map[string]interface{}
 }
@@ -119,11 +118,11 @@ func (fe *fileEntry) NewReader() io.Reader {
 	panic("implement me")
 }
 
-func (fe *fileEntry) Verify(callback bacc.CompletionCallback) {
+func (fe *fileEntry) Verify(callback CompletionCallback) {
 	panic("implement me")
 }
 
-func (fe *fileEntry) Extract(progress bacc.ProgressCallback, callback bacc.CompletionCallback) {
+func (fe *fileEntry) Extract(progress ProgressCallback, callback CompletionCallback) {
 	//contentOffset := fe.contentOffset
 	//compressedSize := fe.compressedSize
 
@@ -136,8 +135,8 @@ func (fe *fileEntry) HeaderSize() uint32 {
 	return fe.headerSize
 }
 
-func (fe *fileEntry) EntryType() bacc.EntryType {
-	return bacc.ENTRY_TYPE_FILE
+func (fe *fileEntry) EntryType() EntryType {
+	return ENTRY_TYPE_FILE
 }
 
 func (fe *fileEntry) Name() string {
@@ -160,15 +159,15 @@ func (fe *fileEntry) ContentOffset() uint64 {
 	return fe.contentOffset
 }
 
-func (fe *fileEntry) CompressionMethod() bacc.CompressionMethod {
+func (fe *fileEntry) CompressionMethod() CompressionMethod {
 	return fe.compressionMethod
 }
 
-func (fe *fileEntry) EncryptionMethod() bacc.EncryptionMethod {
+func (fe *fileEntry) EncryptionMethod() EncryptionMethod {
 	return fe.encryptionMethod
 }
 
-func (fe *fileEntry) SignatureMethod() bacc.SignatureMethod {
+func (fe *fileEntry) SignatureMethod() SignatureMethod {
 	return fe.signatureMethod
 }
 
