@@ -6,6 +6,7 @@ import (
 	"io"
 	"reflect"
 	"github.com/go-errors/errors"
+	"hash"
 )
 
 type encryptionConfig struct {
@@ -93,11 +94,83 @@ func calculateBytesize(entry ArchiveEntry) int64 {
 	return headerSize
 }
 
-type relativeReaderAt struct {
-	reader     io.ReaderAt
-	baseOffset int64
+func createOutputWriter(writer *writeBuffer, source *archiveFileWriter, key []byte) (io.Writer, error) {
+	w, err := newEncryptor(writer, source, key)
+	if err != nil {
+		return nil, errors.New(err)
+	}
+
+	return newCompressor(w, source)
 }
 
-func (rra *relativeReaderAt) ReadAt(p []byte, off int64) (n int, err error) {
-	return rra.reader.ReadAt(p, off+rra.baseOffset)
+func createInputReader(source *fileEntry, key []byte) (io.Reader, error) {
+	reader := source.NewReader()
+	r, err := newDecompressor(reader, source)
+	if err != nil {
+		return nil, err
+	}
+
+	return newDecryptor(r, source, key)
+}
+
+func generateSigningHash(reader io.Reader, total int64, progress ProgressCallback, hasherFactory func() hash.Hash) ([]byte, error) {
+	hasher := hasherFactory()
+	buffer := make([]byte, 1024*1024)
+
+	offset := int64(0)
+	for ; ; {
+		bytes, err := reader.Read(buffer)
+		if err != nil && err != io.EOF {
+			return nil, err
+		}
+
+		hasher.Write(buffer[:bytes])
+		offset += int64(bytes)
+
+		percent := float32(float64(offset) * 100. / float64(total))
+		progress(uint64(total), uint64(offset), percent)
+
+		if err == io.EOF {
+			break
+		}
+	}
+
+	return hasher.Sum(nil), nil
+}
+
+type boundedReader struct {
+	reader     io.ReaderAt
+	baseOffset int64
+	size       int64
+	offset     int64
+}
+
+func newBoundedReader(reader io.ReaderAt, offset int64, size int64) io.Reader {
+	return &boundedReader{
+		reader:     reader,
+		baseOffset: offset,
+		size:       size,
+		offset:     0,
+	}
+}
+
+func (r *boundedReader) Read(p []byte) (n int, err error) {
+	l := int64(len(p))
+
+	remaining := r.size - r.offset
+	read := min(l, remaining)
+	v := make([]byte, read)
+
+	n, err = r.reader.ReadAt(v, r.offset+r.baseOffset)
+	if err != nil && err != io.EOF {
+		return 0, err
+	}
+
+	r.offset += int64(n)
+
+	if r.offset == r.size {
+		err = io.EOF
+	}
+
+	return n, err
 }

@@ -14,11 +14,11 @@ import (
 )
 
 type Signer interface {
-	Sign(reader io.ReaderAt, signatureOffset int64) ([]byte, error)
+	Sign(reader io.Reader, size int64, progress ProgressCallback) ([]byte, error)
 }
 
 type Verifier interface {
-	Verify(reader io.ReaderAt, signatureOffset int64, signature []byte) error
+	Verify(reader io.Reader, size int64, signature []byte, progress ProgressCallback) error
 }
 
 type rsaPrivateKey struct {
@@ -34,7 +34,7 @@ func LoadKeyForSigning(keyPath string) (Signer, error) {
 	if err != nil {
 		return nil, err
 	}
-	return parsePrivateKey(data)
+	return ParsePrivateKey(data)
 }
 
 func LoadKeyForVerifying(keyPath string) (Verifier, error) {
@@ -42,10 +42,10 @@ func LoadKeyForVerifying(keyPath string) (Verifier, error) {
 	if err != nil {
 		return nil, err
 	}
-	return parsePublicKey(data)
+	return ParsePublicKey(data)
 }
 
-func parsePrivateKey(data []byte) (Signer, error) {
+func ParsePrivateKey(data []byte) (Signer, error) {
 	block, _ := pem.Decode(data)
 	if block == nil {
 		return nil, errors.New("ssh: no key found")
@@ -63,7 +63,7 @@ func parsePrivateKey(data []byte) (Signer, error) {
 	}
 }
 
-func parsePublicKey(data []byte) (Verifier, error) {
+func ParsePublicKey(data []byte) (Verifier, error) {
 	block, _ := pem.Decode(data)
 	if block == nil {
 		return nil, errors.New("ssh: no key found")
@@ -82,46 +82,20 @@ func parsePublicKey(data []byte) (Verifier, error) {
 	return nil, errors.New("given key is not a RSA public key")
 }
 
-func (rpk *rsaPrivateKey) Sign(reader io.ReaderAt, signatureOffset int64) ([]byte, error) {
-	hash, err := generateSigningHash(reader, signatureOffset, func() hash.Hash { return sha512.New() })
+func (rpk *rsaPrivateKey) Sign(reader io.Reader, size int64, progress ProgressCallback) ([]byte, error) {
+	hash, err := generateSigningHash(reader, size, progress, func() hash.Hash { return sha512.New() })
+
 	if err != nil {
 		return nil, err
 	}
 	return rsa.SignPKCS1v15(rand.Reader, rpk.PrivateKey, crypto.SHA512, hash)
 }
 
-func (rpk *rsaPublicKey) Verify(reader io.ReaderAt, signatureOffset int64, signature []byte) error {
-	hash, err := generateSigningHash(reader, signatureOffset, func() hash.Hash { return sha512.New() })
+func (rpk *rsaPublicKey) Verify(reader io.Reader, size int64, signature []byte, progress ProgressCallback) error {
+	hash, err := generateSigningHash(reader, size, progress, func() hash.Hash { return sha512.New() })
+
 	if err != nil {
 		return err
 	}
 	return rsa.VerifyPKCS1v15(rpk.PublicKey, crypto.SHA512, hash, signature)
-}
-
-func generateSigningHash(reader io.ReaderAt, signatureOffset int64, hasherFactory func() hash.Hash) ([]byte, error) {
-	hasher := hasherFactory()
-	buffer := make([]byte, 1024)
-
-	offset := int64(0)
-	for ; ; {
-		bytes, err := reader.ReadAt(buffer, offset)
-		if err != nil && err != io.EOF {
-			return nil, err
-		}
-
-		breakOut := false
-		if offset+int64(bytes) >= signatureOffset {
-			bytes = int(signatureOffset - offset)
-			breakOut = true
-		}
-
-		hasher.Write(buffer[:bytes])
-		offset += int64(bytes)
-
-		if err == io.EOF || breakOut {
-			break
-		}
-	}
-
-	return hasher.Sum(nil), nil
 }

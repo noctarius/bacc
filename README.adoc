@@ -194,6 +194,10 @@ The following table doesn't contain offset definitions as offsets depend on the 
 | 4 bytes
 | An unsigned 32 bit size value, defining the overall size of this file entry header.
 
+| Quick checksum
+| 32 bytes
+| SHA2-256 checksum of the file's unencrypted and uncompressed (original) content
+
 | Compressed size
 | _Pointer_
 | The compressed size of the file's content.

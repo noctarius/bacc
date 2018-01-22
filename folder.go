@@ -70,6 +70,7 @@ type folderEntry struct {
 	entryCount uint32
 	metadata   map[string]interface{}
 	entries    []ArchiveEntry
+	reader     *readerBuffer
 }
 
 func (fe *folderEntry) HeaderSize() uint32 {

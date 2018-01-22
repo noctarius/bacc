@@ -170,6 +170,10 @@ type readerArchive struct {
 	archivePath string
 }
 
+func (a *readerArchive) Close() error {
+	return a.reader.file.Close()
+}
+
 func (a *readerArchive) Header() ArchiveHeader {
 	return a.header
 }
@@ -247,7 +251,10 @@ func (a *readerArchive) checkSignature() (bool, error) {
 		return false, err
 	}
 
-	err = key.Verify(file, signatureOffset, signature)
+	reader := newBoundedReader(file, 0, signatureOffset)
+	err = key.Verify(reader, signatureOffset, signature, func(total uint64, processed uint64, progress float32) {
+	})
+
 	if err != nil && err != rsa.ErrVerification {
 		return false, err
 	}

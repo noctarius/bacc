@@ -7,8 +7,8 @@ const MagicHeader uint16 = 0xBACC
 const (
 	BaseBytesizeArchiveHeader = uint32(2 + 1 + 1 + 32 + 4 + 8 + 1 + 32 + 3)
 	BaseBytesizeFolderHeader  = uint32(8 + 1 + 4 + 4 + 3)
-	BaseBytesizeFile32Header  = uint32(8 + 1 + 4 + 4 + 4 + 4 + 1 + 1 + 1 + 3)
-	BaseBytesizeFile64Header  = uint32(8 + 1 + 4 + 8 + 8 + 8 + 1 + 1 + 1 + 3)
+	BaseBytesizeFile32Header  = uint32(8 + 1 + 4 + 32 + 4 + 4 + 4 + 1 + 1 + 1 + 3)
+	BaseBytesizeFile64Header  = uint32(8 + 1 + 4 + 32 + 8 + 8 + 8 + 1 + 1 + 1 + 3)
 )
 
 type CompletionCallback func(read uint64, processed uint64, result bool, err error)
@@ -116,6 +116,12 @@ const (
 	ENTRY_TYPE_FILE   EntryType = 0x01
 )
 
+type EntryReader interface {
+	io.Seeker
+	io.Reader
+	io.ReaderAt
+}
+
 type ArchiveHeader interface {
 	MagicHeader() uint16
 	Version() uint8
@@ -161,12 +167,13 @@ type ArchiveFile interface {
 	CompressionMethod() CompressionMethod
 	EncryptionMethod() EncryptionMethod
 	SignatureMethod() SignatureMethod
-	Verify(callback CompletionCallback)
-	Extract(progress ProgressCallback, callback CompletionCallback)
-	NewReader() io.Reader
+	Verify() (bool, error)
+	Extract(writer io.Writer, progress ProgressCallback, callback CompletionCallback) error
+	NewReader() EntryReader
 }
 
 type Archive interface {
+	io.Closer
 	Header() ArchiveHeader
 	RootEntry() ArchiveFolder
 	ListLookupDirectory()

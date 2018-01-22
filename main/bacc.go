@@ -2,7 +2,7 @@ package main
 
 import (
 	"flag"
-	"github.com/relations-one/bacc"
+	"github.com/relationsone/bacc"
 	"os"
 	"fmt"
 )

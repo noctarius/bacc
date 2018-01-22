@@ -5,7 +5,7 @@ import (
 	"github.com/go-errors/errors"
 )
 
-func createEncryptor(writer io.Writer, source *archiveFileWriter, key []byte) (io.Writer, error) {
+func newEncryptor(writer io.Writer, source *archiveFileWriter, key []byte) (io.Writer, error) {
 	switch source.encryptionMethod {
 	case ENCMET_AES256:
 		w, err := newAesWriter(writer, key)
@@ -34,26 +34,22 @@ func createEncryptor(writer io.Writer, source *archiveFileWriter, key []byte) (i
 	}
 }
 
-func createDecryptor(reader io.Reader, source *fileEntry, key []byte) (io.Reader, error) {
-	baseOffset := int64(source.contentOffset)
-	size := int64(source.compressedSize)
-
+func newDecryptor(reader io.Reader, source *fileEntry, key []byte) (io.Reader, error) {
 	switch source.encryptionMethod {
 	case ENCMET_AES256:
 		return newAesReader(reader, key)
 
 	case ENCMET_TWOFISH256:
-		return newTwofishReader(reader, baseOffset, size, key)
+		return newTwofishReader(reader, key)
 
 	case ENCMET_RSA_PRIVATE:
 		// Unimplemented yet
-		return &relativeReaderAt{reader, baseOffset}, nil
+		return reader, nil
 
 	case ENCMET_RSA_PUBLIC:
 		// Unimplemented yet
-		return &relativeReaderAt{reader, baseOffset}, nil
-
-	default:
-		return &relativeReaderAt{reader, baseOffset}, nil
+		return reader, nil
 	}
+
+	return reader, nil
 }

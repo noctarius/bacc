@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"github.com/relations-one/bacc"
+	"github.com/relationsone/bacc"
 )
 
 func main() {

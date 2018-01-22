@@ -2,7 +2,7 @@ package bacc
 
 import (
 	"compress/gzip"
-	"github.com/hsinhoyeh/gobzip"
+	"github.com/relationsone/gobzip"
 	"io"
 	"golang.org/x/crypto/twofish"
 	"crypto/aes"

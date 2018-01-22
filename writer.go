@@ -4,12 +4,10 @@ import (
 	"encoding/hex"
 	"os"
 	"io"
-	"compress/gzip"
 	"crypto/sha256"
 	"time"
 	"strings"
 	"fmt"
-	"github.com/hsinhoyeh/gobzip"
 	"github.com/go-errors/errors"
 )
 
@@ -200,6 +198,11 @@ func (p *Packager) createFile(entry *JsonEntry, offset int64) (*archiveFileWrite
 		return nil, -1, err
 	}
 
+	checksum, err := checksumInputFile(entry.pathString)
+	if err != nil {
+		return nil, -1, err
+	}
+
 	return &archiveFileWriter{
 		name:              entry.name,
 		timestamp:         timestamp,
@@ -214,6 +217,7 @@ func (p *Packager) createFile(entry *JsonEntry, offset int64) (*archiveFileWrite
 		metadataSize:      metadataSize,
 		metadata:          metadataBytes,
 		offset:            offset,
+		checksum:          checksum,
 	}, offset + int64(headerSize), nil
 }
 
@@ -341,7 +345,7 @@ func (p *Packager) copyCompressAndEncryptFileContent(writer *writeBuffer, source
 	writer.mark()
 
 	// Create the output writer to just copy, compress, encrypt
-	outputWriter, err := p.createOutputWriter(writer, source, source.key)
+	outputWriter, err := createOutputWriter(writer, source, source.key)
 	if err != nil {
 		return -1, err
 	}
@@ -385,37 +389,46 @@ func (p *Packager) copySourceToSink(reader io.ReaderAt, writer io.Writer, size i
 		}
 		sourceOffset += int64(bytes)
 
-		percent := float32(sourceOffset) * 100. / float32(size)
+		percent := float32(float64(sourceOffset) * 100. / float64(size))
 		progress(uint64(size), uint64(sourceOffset), percent)
 	}
+	callback(uint64(sourceOffset), uint64(size), true, nil)
 
 	return size, nil
 }
 
-func (p *Packager) createOutputWriter(writer *writeBuffer, source *archiveFileWriter, key []byte) (io.Writer, error) {
-	var w io.Writer
-
-	w, err := createEncryptor(writer, source, key)
+func checksumInputFile(path string) ([]byte, error) {
+	fmt.Print(fmt.Sprintf("Calculating checksum for input %s: ", path))
+	file, err := os.OpenFile(path, os.O_RDWR, os.ModePerm)
 	if err != nil {
-		errors.New(err)
+		return nil, err
 	}
 
-	switch source.compressionMethod {
-	case COMPMET_GZIP:
-		wt, err := gzip.NewWriterLevel(w, gzip.BestCompression)
+	hasher := sha256.New()
+	buffer := make([]byte, 1024*1024)
+
+	stat, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+
+	size := stat.Size()
+	offset := int64(0)
+	for ; offset < size; {
+		length := min(int64(len(buffer)), size-offset)
+		bytes, err := file.ReadAt(buffer[:length], offset)
 		if err != nil {
 			return nil, err
 		}
-		w = wt
-	case COMPMET_BZIP2:
-		wt, err := gobzip.NewBzipWriter(w)
-		if err != nil {
-			return nil, err
-		}
-		w = wt
+
+		hasher.Write(buffer[:bytes])
+		offset += int64(bytes)
+		fmt.Print(".")
 	}
 
-	return w, nil
+	checksum := hasher.Sum(nil)
+	fmt.Println(fmt.Sprintf(" 100%% (%d)", offset))
+	return checksum, nil
 }
 
 func checksumArchive(archivePath string, checksumOffset int64) error {
@@ -476,7 +489,11 @@ func signArchive(archivePath string, signatureOffset int64, keyPath string) erro
 		return err
 	}
 
-	signature, err := signer.Sign(file, signatureOffset)
+	reader := newBoundedReader(file, 0, signatureOffset)
+	signature, err := signer.Sign(reader, signatureOffset, func(total uint64, processed uint64, progress float32) {
+		fmt.Print(".")
+	})
+
 	if err != nil {
 		return err
 	}

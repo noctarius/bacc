@@ -75,7 +75,7 @@ func (r *Reader) readHeader(reader *readerBuffer) (*archiveHeader, error) {
 
 	header.bitflag = bitflag
 
-	if err := reader.readBuffer(header.checksum[:], offset); err != nil {
+	if _, err := reader.ReadAt(header.checksum[:], offset); err != nil {
 		return nil, err
 	}
 	offset += int64(len(header.checksum))
@@ -105,7 +105,7 @@ func (r *Reader) readHeader(reader *readerBuffer) (*archiveHeader, error) {
 	header.signatureMethod = SignatureMethod(signatureMethod)
 
 	fingerprint := make([]byte, 32)
-	if err := reader.readBuffer(fingerprint, offset); err != nil {
+	if _, err := reader.ReadAt(fingerprint, offset); err != nil {
 		return nil, err
 	}
 	header.certificateFingerprint = hex.EncodeToString(fingerprint)
@@ -130,7 +130,11 @@ func (r *Reader) readMetadata(reader *readerBuffer, offset int64) (map[string]in
 	var table map[string]interface{}
 	if metadataSize > 0 {
 		buffer := make([]byte, metadataSize)
-		reader.readBuffer(buffer, offset)
+		_, err = reader.ReadAt(buffer, offset)
+		if err != nil {
+			return nil, err
+		}
+
 		t, err := deserialize(buffer)
 		if err != nil {
 			return nil, err
@@ -235,6 +239,13 @@ func (r *Reader) readFolder(reader *readerBuffer, offset int64, name string,
 func (r *Reader) readFile(reader *readerBuffer, offset int64, name string,
 	timestamp uint64, headerSize uint32) (*fileEntry, error) {
 
+	checksum := make([]byte, 32)
+	n, err := reader.ReadAt(checksum, offset)
+	if err != nil {
+		return nil, err
+	}
+	offset += int64(n)
+
 	var compressedSize, uncompressedSize, contentOffset uint64
 	if r.addressingMode == ADDRESSING_64BIT {
 		cs, err := reader.readUint64(offset)
@@ -296,7 +307,7 @@ func (r *Reader) readFile(reader *readerBuffer, offset int64, name string,
 	keyFingerprint := ""
 	if EncryptionMethod(encryptionMethod) != ENCMET_UNENCRYPTED {
 		fingerprint := make([]byte, 32)
-		if err := reader.readBuffer(fingerprint, offset); err != nil {
+		if _, err := reader.ReadAt(fingerprint, offset); err != nil {
 			return nil, err
 		}
 		keyFingerprint = hex.EncodeToString(fingerprint)
@@ -310,19 +321,27 @@ func (r *Reader) readFile(reader *readerBuffer, offset int64, name string,
 	offset++
 
 	certificateFingerprint := ""
+	signature := make([]byte, 0)
 	if SignatureMethod(signatureMethod) != SIGMET_UNSINGED {
 		fingerprint := make([]byte, 32)
-		if err := reader.readBuffer(fingerprint, offset); err != nil {
+		if _, err := reader.ReadAt(fingerprint, offset); err != nil {
 			return nil, err
 		}
 		certificateFingerprint = hex.EncodeToString(fingerprint)
 		offset += 32
+
+		signature = make([]byte, 256)
+		if _, err := reader.ReadAt(signature, offset); err != nil {
+			return nil, err
+		}
+		offset += 256
 	}
 
 	entry := &fileEntry{
 		name:                   name,
 		timestamp:              timestamp,
 		headerSize:             headerSize,
+		checksum:               checksum,
 		compressedSize:         compressedSize,
 		uncompressedSize:       uncompressedSize,
 		contentOffset:          contentOffset,
@@ -331,7 +350,10 @@ func (r *Reader) readFile(reader *readerBuffer, offset int64, name string,
 		keyFingerprint:         keyFingerprint,
 		signatureMethod:        SignatureMethod(signatureMethod),
 		certificateFingerprint: certificateFingerprint,
+		signature:              signature,
 		metadata:               make(map[string]interface{}),
+		reader:                 reader,
+		keyManager:             r.keyManager,
 	}
 
 	metadataSize, err := reader.readUint24(offset)
