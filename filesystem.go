@@ -48,9 +48,9 @@ func (bf *baccFs) OpenFile(name string, flag int, perm os.FileMode) (afero.File,
 	segments := strings.Split(name, "/")
 
 	entry := bf.archive.RootEntry()
-	for segIndex := 0; segIndex < len(segments); segIndex++ {
+	for segIndex := 1; segIndex < len(segments); segIndex++ {
 		for _, child := range entry.Entries() {
-			if child.Name() != segments[0] {
+			if child.Name() != segments[segIndex] {
 				continue
 			}
 
@@ -191,6 +191,7 @@ func (bf *baccFile) Seek(offset int64, whence int) (int64, error) {
 		case io.SeekEnd:
 			bf.offset = bf.fileInfo.Size() + offset
 		}
+		return offset, nil
 	}
 	return 0, os.ErrPermission
 }
